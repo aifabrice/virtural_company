@@ -43,7 +43,7 @@ const fallbackDashboard = {
       owner: "销售AI",
       status: "待老板确认",
       priority: "今天",
-      nextStep: "可交给Claude写出完整微信话术。",
+      nextStep: "可交给AI写出完整微信话术。",
     },
     {
       id: "task_leads",
@@ -86,9 +86,9 @@ const fallbackDashboard = {
 };
 
 const terminalLines = [
-  "> Login portal.",
+  "> 老板经营入口已准备",
   "> 正在检查本地AI经营系统...",
-  "> 已准备公司 dashboard",
+  "> 已准备公司经营台",
   "> 已连接任务队列",
   "> 等待老板进入",
 ];
@@ -97,7 +97,7 @@ const modalCopy = {
   about: ["这是干什么的", "这是一个AI公司经营系统。老板只要确认关键事项，AI员工会持续整理客户、写材料、生成任务、准备官网和提醒下一步。"],
   doctrine: ["使用原则", "简单说三条：小事让AI先做；重要事老板确认；每天只看最该处理的几件事。"],
   faq: ["常见问题", "它不会替老板乱发消息、乱扣钱、乱改公司资料。涉及对外发送和收款，都需要老板确认。"],
-  health: ["系统自检", "正在检查前端页面、本地后端和 Claude Code 连接状态。"],
+  health: ["AI状态", "正在检查AI员工是否可以正常接活。"],
 };
 
 const els = {
@@ -136,9 +136,9 @@ const els = {
   chatInput: document.querySelector("#chatInput"),
   sendButton: document.querySelector("#sendButton"),
   quickActionButtons: document.querySelectorAll("[data-quick]"),
-  claudeStatus: document.querySelector("#claudeStatus"),
-  claudeResult: document.querySelector("#claudeResult"),
-  bridgeLink: document.querySelector("#bridgeLink"),
+  agentStatus: document.querySelector("#agentStatus"),
+  agentMessages: document.querySelector("#agentMessages"),
+  clearConversation: document.querySelector("#clearConversation"),
   imageInput: document.querySelector("#imageInput"),
   modalBackdrop: document.querySelector("#modalBackdrop"),
   modalTitle: document.querySelector("#modalTitle"),
@@ -149,11 +149,13 @@ const els = {
 };
 
 let dashboardState = fallbackDashboard;
-let claudeBusy = false;
-let claudeConnected = false;
+let agentBusy = false;
+let agentConnected = false;
 let passiveTimer = null;
 let modalCopyText = "";
 let currentView = "today";
+let conversationMessages = [];
+let conversationCompanyId = "";
 const compactViewport = window.matchMedia("(max-width: 980px)");
 
 function escapeHtml(value) {
@@ -210,6 +212,52 @@ function toast(message) {
   window.setTimeout(() => node.remove(), 3200);
 }
 
+function conversationGreeting() {
+  const company = dashboardState.company || fallbackDashboard.company;
+  const tasks = dashboardState.tasks || [];
+  const firstTask = tasks[0]?.title ? `今天建议先看：${tasks[0].title}。` : "今天我会先整理最要紧的经营事项。";
+  return `我在这里帮${company.name || "公司"}推进经营任务。${firstTask}你可以直接吩咐我找客户、写话术、做报价或整理员工安排。`;
+}
+
+function renderConversation() {
+  els.agentMessages.innerHTML = conversationMessages
+    .map(
+      (item) => `<article class="message ${item.role} ${item.state || ""}">
+        <div class="message-meta">
+          <span>${escapeHtml(item.role === "user" ? "老板" : "AI经营助手")}</span>
+          <span>${escapeHtml(item.time || "")}</span>
+        </div>
+        <p>${escapeHtml(item.text)}</p>
+      </article>`,
+    )
+    .join("");
+  els.agentMessages.scrollTop = els.agentMessages.scrollHeight;
+}
+
+function addConversationMessage(role, text, state = "") {
+  const message = {
+    id: `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    role,
+    text,
+    state,
+    time: new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()),
+  };
+  conversationMessages.push(message);
+  conversationMessages = conversationMessages.slice(-24);
+  renderConversation();
+  return message.id;
+}
+
+function updateConversationMessage(messageId, patch) {
+  conversationMessages = conversationMessages.map((item) => (item.id === messageId ? { ...item, ...patch } : item));
+  renderConversation();
+}
+
+function ensureConversationGreeting() {
+  if (conversationMessages.length) return;
+  addConversationMessage("agent", conversationGreeting());
+}
+
 function showLogin() {
   els.loginView.classList.remove("hidden");
   els.productView.classList.add("hidden");
@@ -252,6 +300,10 @@ function setDashboardView(view) {
 function renderDashboard(data) {
   dashboardState = data || fallbackDashboard;
   const { company, metrics, agents, tasks, documents, channels, activity, inbox, socialDraft, updatedAt } = dashboardState;
+  if (company?.id && conversationCompanyId !== company.id) {
+    conversationCompanyId = company.id;
+    conversationMessages = [];
+  }
 
   els.companySlug.textContent = `/dashboard/${company.slug || "fitscope"}`;
   document.querySelector(".brand > span").textContent = company.name || "顺达机械";
@@ -303,7 +355,7 @@ function renderDashboard(data) {
         </div>
         <div class="task-actions" aria-label="处理这个事项">
           <button type="button" data-task-choice="confirm" data-task-id="${escapeHtml(task.id)}">同意</button>
-          <button type="button" data-task-choice="claude" data-task-id="${escapeHtml(task.id)}">发给Claude</button>
+          <button type="button" data-task-choice="agent" data-task-id="${escapeHtml(task.id)}">交给AI</button>
           <button type="button" data-task-choice="pause" data-task-id="${escapeHtml(task.id)}">先不做</button>
         </div>
       </article>`,
@@ -341,6 +393,7 @@ function renderDashboard(data) {
 
   els.inboxCard.innerHTML = `<p><strong>${escapeHtml(inbox.title)}</strong></p><p>${escapeHtml(inbox.body)}</p>`;
   setDashboardView(currentView);
+  ensureConversationGreeting();
 }
 
 async function loadDashboard({ quiet = false } = {}) {
@@ -348,11 +401,11 @@ async function loadDashboard({ quiet = false } = {}) {
     const data = await fetchJson("/api/dashboard");
     renderDashboard(data.dashboard);
     if (!quiet) toast("经营看板已更新");
-    pushLog("> 已从本地后端刷新 dashboard");
+    pushLog("> 已刷新公司经营台");
   } catch (error) {
     renderDashboard(fallbackDashboard);
-    if (!quiet) toast("后端暂时不可用，已显示本地演示数据");
-    pushLog("> 后端未连接，显示本地演示数据");
+    if (!quiet) toast("经营服务暂时不可用，已显示本地数据");
+    pushLog("> 经营服务暂时不可用，显示本地数据");
   }
 }
 
@@ -375,7 +428,7 @@ async function login(ownerName, ownerPhone, ownerCode) {
     history.replaceState(null, "", data.redirectTo || "/dashboard/fitscope");
     pushLog("> 老板已通过口令进入公司看板");
     toast("登录成功");
-    await checkClaudeBridge();
+    await checkAIBridge();
     startPassiveLogs();
   } catch (error) {
     redirectToLogin(error.message || "登录失败，请检查口令。");
@@ -443,7 +496,7 @@ function openModal(key, detail) {
     const tasks = dashboardState.tasks || [];
     setModal(
       "查看全部",
-      `<p>这些事项都保留在看板里。老板只需要决定：同意、交给Claude、还是先不做。</p>
+      `<p>这些事项都保留在看板里。老板只需要决定：同意、交给AI、还是先不做。</p>
       <div class="modal-list">
         ${tasks
           .map(
@@ -453,7 +506,7 @@ function openModal(key, detail) {
               <span class="meta">${escapeHtml(task.owner)} · ${escapeHtml(task.status)}</span>
               <div class="task-actions">
                 <button type="button" data-task-choice="confirm" data-task-id="${escapeHtml(task.id)}">同意</button>
-                <button type="button" data-task-choice="claude" data-task-id="${escapeHtml(task.id)}">发给Claude</button>
+                <button type="button" data-task-choice="agent" data-task-id="${escapeHtml(task.id)}">交给AI</button>
                 <button type="button" data-task-choice="pause" data-task-id="${escapeHtml(task.id)}">先不做</button>
               </div>
             </article>`,
@@ -539,7 +592,7 @@ function openModal(key, detail) {
       <pre class="copy-panel">${escapeHtml(modalCopyText)}</pre>
       <div class="modal-actions">
         <button class="god-mode" type="button" data-copy-doc>复制内容</button>
-        <button class="bevel" type="button" data-doc-claude="${escapeHtml(detail.doc.id)}">让Claude再优化</button>
+        <button class="bevel" type="button" data-doc-agent="${escapeHtml(detail.doc.id)}">让AI再优化</button>
       </div>`,
       key,
     );
@@ -555,98 +608,91 @@ function closeModal() {
   modalCopyText = "";
 }
 
-function setClaudeStatus(message, state = "") {
-  els.claudeStatus.textContent = message;
-  els.claudeStatus.className = `bridge-status ${state}`.trim();
+function setAIStatus(message, state = "") {
+  els.agentStatus.textContent = message;
+  els.agentStatus.className = `agent-status ${state}`.trim();
 }
 
-function setClaudeBusy(isBusy) {
-  claudeBusy = isBusy;
+function setAIBusy(isBusy) {
+  agentBusy = isBusy;
   els.quickActionButtons.forEach((button) => {
     button.disabled = isBusy;
   });
   els.sendButton.disabled = isBusy || els.chatInput.value.trim().length === 0;
 }
 
-function cliSummary(data) {
-  const claude = data.claude || data.providers?.claude || {};
-  const claudeModel = claude.model ? `，模型 ${claude.model}` : "";
-  const claudeText = claude.ok
-    ? `Claude Code：已连接（${claude.version || "可用"}${claudeModel}）`
-    : claude.version
-      ? "Claude Code：已安装，但还没有配置可用密钥"
-      : "Claude Code：未安装或服务未启动";
-  return { claude, claudeText };
+function agentSummary(data) {
+  const agent = data.agent || {};
+  const ok = Boolean(data.ok && agent.ready !== false);
+  return {
+    ok,
+    text: ok ? "AI员工在线，可以处理老板指令。" : "AI员工暂时需要检查，请稍后再试。",
+  };
 }
 
-async function checkClaudeBridge() {
+async function checkAIBridge() {
   try {
     const data = await fetchJson("/api/health", { headers: { "x-qxb-local": "1" } });
-    const { claude, claudeText } = cliSummary(data);
-    claudeConnected = Boolean(claude.ok);
-    setClaudeStatus(claude.ok ? "Claude Code：已连接" : "Claude Code：需要配置", claude.ok ? "ready" : "error");
-    els.claudeResult.textContent = `${claudeText}\n点击快捷按钮或输入指令后，Claude Code 会用 MiniMax-M3 返回结果。`;
-    els.bridgeLink.textContent = "当前连接正常";
-    els.bridgeLink.href = `${API_BASE || ""}/dashboard/fitscope`;
+    const summary = agentSummary(data);
+    agentConnected = summary.ok;
+    setAIStatus(summary.ok ? "在线" : "待检查", summary.ok ? "ready" : "error");
   } catch {
-    claudeConnected = false;
-    setClaudeStatus("Claude Code：未连接，请运行 npm start", "error");
-    els.claudeResult.textContent = "页面仍可操作；如需真正调用 Claude Code，请在项目目录运行 npm start，然后刷新或等待自动重连。";
-    els.bridgeLink.textContent = "打开连接版页面";
-    els.bridgeLink.href = "http://localhost:5176/dashboard/fitscope";
+    agentConnected = false;
+    setAIStatus("待检查", "error");
   }
 }
 
-async function runClaudeCli(message) {
-  if (claudeBusy) {
-    toast("Claude Code 正在处理上一条指令");
+async function runAICli(message) {
+  if (agentBusy) {
+    toast("AI员工正在处理上一条指令");
     return;
   }
-  setClaudeBusy(true);
-  setClaudeStatus("Claude Code：正在处理老板指令...", "busy");
-  els.claudeResult.textContent = "正在让 Claude Code 处理，请稍等。第一次可能会慢一点。";
+  setAIBusy(true);
+  setAIStatus("处理中", "busy");
+  addConversationMessage("user", message);
+  const pendingMessageId = addConversationMessage("agent", "收到，我正在整理结果。", "pending");
 
   try {
-    const started = await fetchJson("/api/claude/jobs", {
+    const started = await fetchJson("/api/agent/jobs", {
       method: "POST",
       body: JSON.stringify({ message }),
     });
-    const data = await waitForClaudeJob(started.jobId);
-    const output = data.output || "Claude Code 已完成，但没有返回文字。";
-    els.claudeResult.textContent = output;
+    const data = await waitForAIJob(started.jobId);
+    const output = data.output || "已处理完成，但没有新的文字结果。";
+    updateConversationMessage(pendingMessageId, { text: output, state: "" });
     if (data.dashboard) renderDashboard(data.dashboard);
-    pushLog("> Claude Code 已返回结果");
-    setClaudeStatus(`Claude Code：已完成（${Math.max(1, Math.round(data.durationMs / 1000))}秒）`, "ready");
-    toast("Claude Code 已完成");
+    pushLog("> AI员工已返回结果");
+    setAIStatus("在线", "ready");
+    toast("AI员工已完成");
   } catch (error) {
     const messageText = error instanceof Error ? error.message : String(error);
-    els.claudeResult.textContent = `调用 Claude Code 失败：${messageText}`;
-    setClaudeStatus("Claude Code：调用失败", "error");
-    pushLog("> Claude Code 调用失败");
-    toast("Claude Code 调用失败");
+    updateConversationMessage(pendingMessageId, { text: `这次没有处理成功：${messageText}`, state: "error" });
+    setAIStatus("待检查", "error");
+    pushLog("> AI员工处理失败");
+    toast("AI员工处理失败");
   } finally {
-    setClaudeBusy(false);
+    setAIBusy(false);
   }
 }
 
-async function waitForClaudeJob(jobId) {
-  if (!jobId) throw new Error("Claude Code 任务没有启动成功。");
+async function waitForAIJob(jobId) {
+  if (!jobId) throw new Error("任务没有启动成功。");
   for (let attempt = 0; attempt < 80; attempt += 1) {
     await delay(attempt === 0 ? 700 : 1500);
-    const data = await fetchJson(`/api/claude/jobs/${encodeURIComponent(jobId)}`);
+    const data = await fetchJson(`/api/agent/jobs/${encodeURIComponent(jobId)}`);
     if (data.status === "done") return data;
-    if (data.status === "error") throw new Error(data.error || "Claude Code 执行失败。");
+    if (data.status === "error") throw new Error(data.error || "AI员工执行失败。");
     const seconds = Math.max(1, Math.round((data.durationMs || 0) / 1000));
-    setClaudeStatus(`Claude Code：正在处理老板指令...${seconds}秒`, "busy");
+    setAIStatus(`处理中 ${seconds}秒`, "busy");
   }
-  throw new Error("Claude Code 处理时间太久，请稍后再试。");
+  throw new Error("处理时间太久，请稍后再试。");
 }
 
 async function updateTask(taskId, action) {
   const task = dashboardState.tasks.find((item) => item.id === taskId);
   if (!task) return;
-  if (action === "claude" || action === "codex") {
-    await runClaudeCli(`请处理这件经营任务：${task.title}。${task.body}`);
+  if (action === "agent") {
+    await runAICli(`请处理这件经营任务：${task.title}。${task.body}`);
   }
   try {
     const data = await fetchJson(`/api/tasks/${encodeURIComponent(taskId)}`, {
@@ -656,7 +702,7 @@ async function updateTask(taskId, action) {
     renderDashboard(data.dashboard);
     if (els.modalBackdrop.dataset.current === "manageTasks") openModal("manageTasks");
     toast(action === "pause" ? "已暂缓" : "已记录，AI会继续推进");
-    pushLog(action === "pause" ? `> 老板暂缓：${task.title}` : `> 老板确认：${task.title}`);
+    pushLog(action === "pause" ? `> 老板暂缓：${task.title}` : action === "agent" ? `> 已交给AI：${task.title}` : `> 老板确认：${task.title}`);
   } catch (error) {
     task.status = action === "pause" ? "已暂缓" : "老板已同意";
     renderDashboard(dashboardState);
@@ -824,20 +870,20 @@ function sendMessage(value) {
   els.chatInput.value = "";
   els.chatInput.style.height = "auto";
   els.sendButton.disabled = true;
-  runClaudeCli(clean);
+  runAICli(clean);
 }
 
 async function runHealthCheck() {
-  openModal("health", "正在检查前端页面、本地后端和 Claude Code 连接状态。");
+  openModal("health", "正在检查AI员工是否可以正常接活。");
   try {
     const data = await fetchJson("/api/health");
-    const { claude, claudeText } = cliSummary(data);
-    els.modalBody.innerHTML = `<p>前端：正常</p><p>后端：正常</p><p>${escapeHtml(claudeText)}</p><p>密钥：${claude.authConfigured ? "已配置" : "待配置"}</p><p>入口：/dashboard/fitscope</p>`;
-    setClaudeStatus(claude.ok ? "Claude Code：已连接" : "Claude Code：需要配置", claude.ok ? "ready" : "error");
-    toast("系统自检通过");
+    const summary = agentSummary(data);
+    els.modalBody.innerHTML = `<p>页面：正常</p><p>经营数据：正常</p><p>AI员工：${summary.ok ? "可以接活" : "需要检查"}</p><p>老板入口：正常</p>`;
+    setAIStatus(summary.ok ? "在线" : "待检查", summary.ok ? "ready" : "error");
+    toast("AI状态已检查");
   } catch (error) {
-    els.modalBody.innerHTML = `<p>前端：正常</p><p>后端或 AI CLI：需要检查</p><p>${escapeHtml(error.message || String(error))}</p>`;
-    toast("系统自检发现问题");
+    els.modalBody.innerHTML = `<p>页面：正常</p><p>AI员工：需要检查</p><p>${escapeHtml(error.message || String(error))}</p>`;
+    toast("AI状态需要检查");
   }
 }
 
@@ -884,7 +930,7 @@ function initEvents() {
       return;
     }
 
-    const viewNode = target.closest("[data-view]");
+    const viewNode = target.closest("button[data-view]");
     if (viewNode) {
       setDashboardView(viewNode.dataset.view);
       return;
@@ -940,12 +986,12 @@ function initEvents() {
       return;
     }
 
-    const docClaudeNode = target.closest("[data-doc-claude]");
-    if (docClaudeNode) {
-      const doc = dashboardState.documents.find((item) => item.id === docClaudeNode.dataset.docClaude);
+    const docAgentNode = target.closest("[data-doc-agent]");
+    if (docAgentNode) {
+      const doc = dashboardState.documents.find((item) => item.id === docAgentNode.dataset.docAgent);
       const text = modalCopyText;
       closeModal();
-      runClaudeCli(`请帮我把这份资料优化得更适合传统企业老板直接使用：${doc ? doc.title : "公司资料"}。${text}`);
+      runAICli(`请帮我把这份资料优化得更适合传统企业老板直接使用：${doc ? doc.title : "公司资料"}。${text}`);
     }
   });
 
@@ -973,7 +1019,7 @@ function initEvents() {
   els.healthButton.addEventListener("click", runHealthCheck);
 
   els.chatInput.addEventListener("input", () => {
-    els.sendButton.disabled = claudeBusy || els.chatInput.value.trim().length === 0;
+    els.sendButton.disabled = agentBusy || els.chatInput.value.trim().length === 0;
     els.chatInput.style.height = "auto";
     els.chatInput.style.height = `${Math.min(els.chatInput.scrollHeight, 96)}px`;
   });
@@ -991,8 +1037,16 @@ function initEvents() {
     const file = event.target.files?.[0];
     if (file) {
       pushLog(`> 已上传图片：${file.name}`);
-      toast("图片已上传");
+      addConversationMessage("user", `上传了一张图片：${file.name}`);
+      addConversationMessage("agent", "我已记录这张图片。你可以继续说要我看什么，例如“帮我整理这张图里的客户资料”或“按这张图写一段介绍”。");
+      toast("图片已记录");
     }
+  });
+
+  els.clearConversation.addEventListener("click", () => {
+    conversationMessages = [];
+    ensureConversationGreeting();
+    toast("对话已清空");
   });
 
   els.logoutButton.addEventListener("click", async () => {
@@ -1039,7 +1093,7 @@ async function init() {
       if (location.pathname === "/login") {
         history.replaceState(null, "", `/dashboard/${session.company?.slug || "fitscope"}`);
       }
-      await checkClaudeBridge();
+      await checkAIBridge();
       startPassiveLogs();
     } else {
       if (location.pathname.startsWith("/dashboard")) history.replaceState(null, "", "/login");
@@ -1051,7 +1105,7 @@ async function init() {
     toast("暂时连不上后端，请稍后刷新");
   }
   window.setInterval(() => {
-    if (!claudeConnected && !claudeBusy) checkClaudeBridge();
+    if (!agentConnected && !agentBusy) checkAIBridge();
   }, 5000);
 }
 

@@ -5,6 +5,15 @@
 - Browser check: created "新辰贸易", confirmed it opened on its own URL, then switched back to "顺达机械" from the company switcher.
 - final result: passed
 
+**Business-Facing Agent UI QA**
+- Request: Do not expose implementation names, make buttons feel real, and improve the right-side conversation area.
+- Label check: frontend, README, and QA docs no longer expose implementation names, technical wording, model names, or provider-specific branding.
+- Interaction check: fixed task-button delegation so "同意 / 交给AI / 先不做" no longer gets mistaken for section switching. Verified `PATCH /api/tasks/task_quote` returns 200 and the visible status changes to "老板已同意".
+- Chat check: the old single-result box is now a message stream with boss messages, AI replies, timestamps, clear action, and company-specific greeting reset on company switch.
+- Health check: `/api/health` returns business-facing AI worker status only and does not leak setup details.
+- Local evidence: `output/playwright/agent-chat-local.png`.
+- final result: passed
+
 **Auth And Button Actions QA**
 - Request: Keep existing buttons while making them actually respond, and replace rough direct dashboard access with login protection.
 - Auth check: unauthenticated `GET /dashboard/fitscope` returns `302 /login`; unauthenticated `GET /api/dashboard` returns `401`.
@@ -30,13 +39,13 @@
 - Console: no errors or warnings in verification runs.
 - final result: passed
 
-**Claude Code Bridge QA**
-- Request: Connect the app directly to Claude Code CLI with MiniMax-M3.
+**AI Agent Bridge QA**
+- Request: Connect the app directly to the production AI worker.
 - Backend entry: `backend/server.js`.
 - Frontend files: `frontend/index.html`, `frontend/script.js`, `frontend/styles.css`.
-- Health check: `GET /api/health` returns provider `claude` and model `MiniMax-M3`.
-- Execution check: `POST /api/claude/jobs` starts a background Claude Code job, then `GET /api/claude/jobs/:id` returns the result.
-- Public tunnel fix: frontend uses short POST plus polling so slow Claude Code responses do not fail behind Serveo.
+- Health check: `GET /api/health` returns business-facing AI worker status only.
+- Execution check: `POST /api/agent/jobs` starts a background AI task, then `GET /api/agent/jobs/:id` returns the result.
+- Public tunnel fix: frontend uses short POST plus polling so slow AI responses do not fail behind the public proxy.
 - Console: no frontend errors or warnings after the favicon-only warning is ignored.
 - final result: passed
 

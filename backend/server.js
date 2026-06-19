@@ -238,7 +238,7 @@ function defaultState() {
         owner: "销售AI",
         status: "待老板确认",
         priority: "今天",
-        nextStep: "点“发给Claude”，可让它写出完整微信话术。",
+        nextStep: "点“交给AI”，可让它写出完整微信话术。",
       },
       {
         id: "task_leads",
@@ -282,9 +282,13 @@ function defaultState() {
 function normalizeLegacyProviderText(value) {
   if (typeof value === "string") {
     return value
-      .replaceAll("Codex CLI", "Claude Code")
-      .replaceAll("Codex", "Claude Code")
-      .replaceAll("发给Claude Code", "发给Claude");
+      .replaceAll("Codex CLI", "AI经营助手")
+      .replaceAll("Claude Code", "AI经营助手")
+      .replaceAll("MiniMax-M3", "AI经营引擎")
+      .replaceAll("Codex", "AI经营助手")
+      .replaceAll("Claude", "AI")
+      .replaceAll("发给AI经营助手", "交给AI")
+      .replaceAll("发给AI", "交给AI");
   }
   if (Array.isArray(value)) return value.map((item) => normalizeLegacyProviderText(item));
   if (value && typeof value === "object") {
@@ -435,17 +439,17 @@ function claudeEnv() {
 
 function friendlyClaudeError(stderr) {
   if (/invalid_api_key|Incorrect API key|401 Unauthorized|authentication|auth/i.test(stderr)) {
-    return "Claude Code 认证失败：请检查 MiniMax API Key 是否正确。";
+    return "AI员工暂时无法接活，请检查服务配置。";
   }
   if (/model/i.test(stderr) && /not|invalid|unknown|unsupported/i.test(stderr)) {
-    return "Claude Code 模型配置失败：请确认 MiniMax-M3 是否可用。";
+    return "AI员工暂时无法接活，请稍后再试。";
   }
-  return stderr.trim() || "Claude Code 执行失败。";
+  return stderr.trim() || "AI员工执行失败。";
 }
 
 function buildPrompt(message, state) {
   return [
-    "你是“企小帮”的后台AI经营助手，由 Claude Code CLI 和 MiniMax-M3 驱动。",
+    "你是“企小帮”的后台AI经营助手。",
     "用户是一位50岁左右的传统企业老板，不熟悉技术术语。请用非常朴素、可执行的中文回答。",
     "",
     "当前公司：",
@@ -506,7 +510,7 @@ function runClaude(message, state) {
       finished = true;
       resolve({
         ok: false,
-        error: `无法启动 Claude Code CLI：${error.message}`,
+        error: `无法启动AI员工：${error.message}`,
         stdout,
         stderr,
         durationMs: Date.now() - started,
@@ -522,7 +526,7 @@ function runClaude(message, state) {
         ok,
         code,
         signal,
-        error: ok ? "" : timedOut ? "Claude Code 处理超时，请把指令说得更短一点。" : friendlyClaudeError(stderr),
+        error: ok ? "" : timedOut ? "AI员工处理超时，请把指令说得更短一点。" : friendlyClaudeError(stderr),
         output: stdout.trim(),
         durationMs: Date.now() - started,
       };
@@ -584,9 +588,9 @@ function startClaudeJob(message, companyId) {
     job.durationMs = result.durationMs;
     job.completedAt = Date.now();
     if (result.ok) {
-      pushActivity(workspace, `Claude Code已完成老板指令：${message.slice(0, 32)}。`);
+      pushActivity(workspace, `AI员工已完成老板指令：${message.slice(0, 32)}。`);
       workspace.inbox = {
-        title: "Claude Code 已返回结果",
+        title: "AI员工已返回结果",
         body: result.output.slice(0, 220),
       };
       await saveState(state);
@@ -595,7 +599,7 @@ function startClaudeJob(message, companyId) {
       job.dashboard = publicDashboard(state, { companyId: workspace.company.id });
     } else {
       job.status = "error";
-      job.error = result.error || "Claude Code 执行失败。";
+      job.error = result.error || "AI员工执行失败。";
     }
   })().catch((error) => {
     job.status = "error";
@@ -626,24 +630,19 @@ async function handleApi(req, res) {
 
   if (url.pathname === "/api/health" && req.method === "GET") {
     const claudeVersionText = claudeVersion();
-    const claude = {
-      ok: Boolean(claudeVersionText && claudeAuthConfigured()),
-      version: claudeVersionText,
-      bin: CLAUDE_BIN,
-      authConfigured: claudeAuthConfigured(),
-      baseUrl: process.env.ANTHROPIC_BASE_URL || "",
-      model: process.env.ANTHROPIC_MODEL || "",
-      authHint: "需要在 systemd 环境里配置 ANTHROPIC_AUTH_TOKEN 或 ANTHROPIC_API_KEY 后才能真正调用 Claude Code。",
+    const agent = {
+      ready: Boolean(claudeVersionText && claudeAuthConfigured()),
+      label: "AI经营助手",
+      status: Boolean(claudeVersionText && claudeAuthConfigured()) ? "online" : "needs_setup",
+      message: Boolean(claudeVersionText && claudeAuthConfigured())
+        ? "AI员工在线，可以处理老板指令。"
+        : "AI员工暂时需要检查。",
     };
-    sendJson(res, claude.ok ? 200 : 503, {
-      ok: claude.ok,
-      provider: "claude",
-      providerLabel: "Claude Code",
-      version: claude.version,
-      claude,
-      providers: {
-        claude,
-      },
+    sendJson(res, 200, {
+      ok: agent.ready,
+      provider: "agent",
+      providerLabel: "AI经营助手",
+      agent,
       app: "企小帮",
       dashboard: "/dashboard/fitscope",
     });
@@ -930,13 +929,13 @@ async function handleApi(req, res) {
     const action = String(body.action || "").trim();
     if (action === "confirm") task.status = "老板已同意";
     if (action === "pause") task.status = "已暂缓";
-    if (action === "claude" || action === "codex") task.status = "已交给Claude处理";
+    if (action === "agent" || action === "claude" || action === "codex") task.status = "已交给AI处理";
     pushActivity(
       workspace,
       action === "pause"
         ? `老板决定先不做：${task.title}。`
-        : action === "claude" || action === "codex"
-          ? `老板把任务交给Claude Code：${task.title}。`
+        : action === "agent" || action === "claude" || action === "codex"
+          ? `老板把任务交给AI员工：${task.title}。`
           : `老板同意继续推进：${task.title}。`,
     );
     await saveState(state);
@@ -981,7 +980,7 @@ async function handleApi(req, res) {
     return;
   }
 
-  if (url.pathname === "/api/claude/jobs" && req.method === "POST") {
+  if ((url.pathname === "/api/agent/jobs" || url.pathname === "/api/claude/jobs") && req.method === "POST") {
     if (req.headers["x-qxb-local"] !== "1") {
       sendJson(res, 403, { ok: false, error: "缺少本地调用标记。" });
       return;
@@ -1006,12 +1005,12 @@ async function handleApi(req, res) {
     return;
   }
 
-  const claudeJobMatch = url.pathname.match(/^\/api\/claude\/jobs\/([^/]+)$/);
+  const claudeJobMatch = url.pathname.match(/^\/api\/(?:agent|claude)\/jobs\/([^/]+)$/);
   if (claudeJobMatch && req.method === "GET") {
     cleanupClaudeJobs();
     const job = claudeJobs.get(claudeJobMatch[1]);
     if (!job) {
-      sendJson(res, 404, { ok: false, error: "没有找到这次 Claude Code 任务。" });
+      sendJson(res, 404, { ok: false, error: "没有找到这次AI任务。" });
       return;
     }
     sendJson(res, 200, serializeClaudeJob(job));
@@ -1041,9 +1040,9 @@ async function handleApi(req, res) {
       const workspace = workspaceForSession(state, session);
       const result = await runClaude(message, workspace);
       if (result.ok) {
-        pushActivity(workspace, `Claude Code已完成老板指令：${message.slice(0, 32)}。`);
+        pushActivity(workspace, `AI员工已完成老板指令：${message.slice(0, 32)}。`);
         workspace.inbox = {
-          title: "Claude Code 已返回结果",
+          title: "AI员工已返回结果",
           body: result.output.slice(0, 220),
         };
         await saveState(state);
@@ -1148,5 +1147,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log("企小帮后端已启动");
   console.log(`打开 http://localhost:${PORT}/dashboard/fitscope`);
-  console.log(`Claude Code: ${CLAUDE_BIN}`);
+  console.log(`AI员工命令已配置：${CLAUDE_BIN}`);
 });

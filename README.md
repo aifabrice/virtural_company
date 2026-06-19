@@ -5,7 +5,7 @@
 ## 目录结构
 
 - `frontend/`：前端页面、交互脚本和样式。
-- `backend/`：Node.js 后端 API、Claude Code 调用和本地状态管理。
+- `backend/`：Node.js 后端 API、AI员工调用和本地状态管理。
 - `deploy/`：服务器部署用的 systemd 和 nginx 配置。
 - `docs/`：设计检查、产品说明和后续文档。
 
@@ -44,7 +44,7 @@ http://localhost:5176/login
 - `POST /api/social/prepare`
 - `PATCH /api/tasks/:id`
 - `POST /api/agents/run-cycle`
-- `POST /api/claude/jobs`
-- `GET /api/claude/jobs/:id`
+- `POST /api/agent/jobs`
+- `GET /api/agent/jobs/:id`
 
-Claude Code 的 API Key 和登录口令都不放在代码仓库里，生产环境通过 systemd 环境文件配置。
+AI员工服务配置和登录口令都不放在代码仓库里，生产环境通过 systemd 环境文件配置。
