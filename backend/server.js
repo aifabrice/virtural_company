@@ -314,12 +314,217 @@ function workspaceFromLegacy(state) {
   };
 }
 
+function businessKind(company) {
+  const text = `${company?.name || ""} ${company?.industry || ""} ${company?.slogan || ""}`;
+  if (/投资|资本|基金|股权|融资|并购|投行|资产|财务顾问/.test(text)) return "investment";
+  if (/门店|零售|餐饮|美容|服装|超市|酒店|民宿/.test(text)) return "retail";
+  if (/贸易|批发|供应链|进出口|经销|代理/.test(text)) return "trade";
+  if (/设备|机械|工厂|制造|维修|巡检|生产/.test(text)) return "industrial";
+  return "general";
+}
+
+function profileForCompany(company) {
+  const kind = businessKind(company);
+  if (kind === "investment") {
+    return {
+      defaultSlogan: "帮企业和项目方找到更合适的资金与产业资源",
+      mood: `AI员工正在为${company.name}整理项目源、投资方向和今天要跟进的机会。`,
+      metricLead: ["潜在机会", "12个", "项目源待筛选"],
+      doneHint: "项目、资料、跟进、简报",
+      agents: [
+        ["总经理AI", "帮老板定投资顺序", "正在梳理投资方向、项目源和今天要跟进的事项", 72],
+        ["项目AI", "找项目、排优先级", "已整理第一批可接触项目渠道", 64],
+        ["材料AI", "写介绍、看BP、做纪要", "已准备投资合作介绍草稿", 78],
+        ["财务AI", "提醒资金安排和回款", "正在列资金计划和对公资料清单", 46],
+      ],
+      tasks: [
+        ["确认投资方向和项目筛选标准", "AI建议先明确行业、阶段、金额区间、地域和排除项，避免项目越看越乱。", "总经理AI", "老板确认后，AI会整理成项目筛选表。"],
+        ["整理20个项目来源渠道", "AI会按FA、券商、律所、产业园、创业社群和老关系拆出可跟进渠道。", "项目AI", "老板同意后，AI继续补充项目来源名单。"],
+        ["准备一页投资合作介绍", "AI会写清楚关注领域、合作方式和对项目方的要求，方便对外发送。", "材料AI", "老板确认后，AI会生成可复制的对外介绍。"],
+      ],
+      documents: [
+        ["doc_report", "今日投资跟进简报", "老板报告", "刚刚"],
+        ["doc_leads", "项目来源清单", "项目名单", "3分钟前"],
+        ["doc_website", "投资合作介绍草稿", "对外资料", "8分钟前"],
+      ],
+      channels: [
+        ["企业微信/微信", "待连接", "先生成跟进话术"],
+        ["公司官网/公众号", "草稿已生成", "完善对外介绍"],
+        ["资料室/对公账户", "待设置", "设置资料和收款"],
+      ],
+      inbox: ["投资看板已按新公司生成", `AI已经为${company.name}准备了项目源、投资方向、对外介绍和资金资料清单。`],
+      socialDraft: ["投资合作介绍", `${company.name}关注有成长性、有现金流或有产业协同价值的企业项目，可协助项目方梳理融资节奏、资源对接和后续沟通。建议先发给项目方、FA和老合作伙伴。`],
+      cycleSuggestions: [
+        ["整理本周项目跟进表", "AI会把项目名称、阶段、负责人、下一步动作列清楚。", "项目AI"],
+        ["把投资方向写成一页纸", "AI会写清楚关注行业、金额区间、项目阶段和不看的类型。", "材料AI"],
+        ["给5个项目方写跟进消息", "AI建议先跟进最近沟通过、有明确融资需求的项目方。", "项目AI"],
+        ["准备资金安排和资料清单", "AI会列出对公账户、付款节点、尽调材料和审批事项。", "财务AI"],
+      ],
+    };
+  }
+  if (kind === "trade") {
+    return {
+      defaultSlogan: "把客户、货源、报价和回款管清楚",
+      mood: `AI员工正在为${company.name}整理客户线索、报价单和回款事项。`,
+      metricLead: ["潜在客户", "16家", "采购方待筛选"],
+      doneHint: "客户、报价、货源、简报",
+      agents: [
+        ["总经理AI", "帮老板定销售顺序", "正在安排今天最重要的客户和报价事项", 74],
+        ["销售AI", "找客户、写话术", "已整理一批可跟进采购客户", 67],
+        ["资料AI", "写报价、整理产品", "已准备一版产品和报价说明", 80],
+        ["财务AI", "提醒回款和成本", "正在列回款和库存资金提醒", 48],
+      ],
+      tasks: [
+        ["确认主推产品和报价口径", "AI建议先明确主推品类、价格区间、交付周期和最低起订量。", "总经理AI", "老板确认后，AI会整理成可发客户的报价单。"],
+        ["整理16个潜在采购客户", "AI会按行业、采购频率和可能需求列出优先级。", "销售AI", "老板同意后，AI继续补充客户名单。"],
+        ["准备一页产品介绍", "AI会把产品卖点、交期、售后和付款方式写清楚。", "资料AI", "老板确认后，AI会生成可复制版本。"],
+      ],
+      documents: [
+        ["doc_report", "今日贸易跟进简报", "老板报告", "刚刚"],
+        ["doc_leads", "采购客户名单", "销售名单", "3分钟前"],
+        ["doc_website", "产品报价介绍草稿", "对外资料", "8分钟前"],
+      ],
+      channels: [
+        ["企业微信/微信", "待连接", "先生成跟进话术"],
+        ["官网/产品册", "草稿已生成", "完善产品资料"],
+        ["微信/支付宝/对公收款", "待开通", "设置收款"],
+      ],
+      inbox: ["贸易看板已按新公司生成", `AI已经为${company.name}准备了客户名单、报价口径、产品资料和回款提醒。`],
+      socialDraft: ["客户开发内容", `${company.name}可为客户提供稳定货源、清晰报价和及时交付服务，适合先发给老客户、采购负责人和渠道伙伴。`],
+      cycleSuggestions: [
+        ["给5个采购客户做跟进名单", "AI建议先联系最近询价或复购可能性高的客户。", "销售AI"],
+        ["把主推产品写成一页纸", "AI会写清楚卖点、交期、付款和售后。", "资料AI"],
+        ["整理本周报价和发货安排", "AI会把报价、库存、发货和回款列清楚。", "总经理AI"],
+        ["准备回款提醒清单", "AI会列出应收款、账期和下一步提醒话术。", "财务AI"],
+      ],
+    };
+  }
+  const genericName = kind === "retail" ? "门店经营" : kind === "industrial" ? "经营服务" : "业务增长";
+  return {
+    defaultSlogan: "让客户、资料、员工和收款每天都往前走",
+    mood: `AI员工正在为${company.name}整理客户、资料和今天要确认的经营事项。`,
+    metricLead: ["潜在客户", "10家", "优先筛选可成交客户"],
+    doneHint: "客户、资料、员工、简报",
+    agents: [
+      ["总经理AI", "帮老板定顺序", "正在安排今天最重要的三件事", 74],
+      ["销售AI", "找客户、写话术", "已整理第一批潜在客户线索", 66],
+      ["资料AI", "写介绍、做方案", `已准备一版${genericName}介绍`, 80],
+      ["财务AI", "提醒收款和成本", "正在列收款方式和成本提醒", 48],
+    ],
+    tasks: [
+      ["确认主营业务和客户画像", "AI建议先把主要客户、核心产品和成交理由说清楚。", "总经理AI", "老板确认后，AI会整理成经营资料底稿。"],
+      ["整理10个潜在客户", "AI会列出客户类型、可能需求和推荐开场白，方便销售直接跟进。", "销售AI", "老板同意后，AI继续补充客户名单。"],
+      ["准备一页对外介绍", "AI会写成客户能看懂的一页介绍，不讲空话。", "资料AI", "老板确认后，AI会生成可复制版本。"],
+    ],
+    documents: [
+      ["doc_report", "今日经营简报", "老板报告", "刚刚"],
+      ["doc_leads", "客户线索清单", "销售名单", "3分钟前"],
+      ["doc_website", "对外介绍草稿", "对外资料", "8分钟前"],
+    ],
+    channels: [
+      ["企业微信/微信", "待连接", "先生成草稿"],
+      ["公司官网/对外资料", "草稿已生成", "完善介绍"],
+      ["微信/支付宝/对公收款", "待开通", "设置收款"],
+    ],
+    inbox: ["新公司看板已生成", `AI已经为${company.name}准备了客户线索、对外介绍、待确认事项和收款准备。`],
+    socialDraft: ["客户开发内容", `${company.name}可围绕“${company.industry || "主营业务"}”为客户提供更清楚的服务介绍、跟进话术和成交准备，建议先发给老客户和潜在客户。`],
+    cycleSuggestions: [
+      ["给5个潜在客户做跟进名单", "AI建议先联系近期最可能成交的一批客户。", "销售AI"],
+      ["把主营业务写成一页纸", "AI会写成客户能看懂的一页介绍。", "资料AI"],
+      ["整理本周员工安排", "AI会把销售、交付、财务三类工作列清楚。", "总经理AI"],
+      ["准备收款开通清单", "AI会列出微信、支付宝、对公收款分别需要哪些资料。", "财务AI"],
+    ],
+  };
+}
+
+function workspaceTemplateForCompany(input, options = {}) {
+  const companyId = input.id || id("company");
+  const company = {
+    id: companyId,
+    slug: input.slug || `company-${String(companyId).replace(/^company_/, "")}`,
+    name: cleanText(input.name, "新公司", 40),
+    industry: cleanText(input.industry, "请补充主营业务", 80),
+    website: cleanText(input.website, "", 120),
+    slogan: cleanText(input.slogan, "", 120),
+  };
+  const profile = profileForCompany(company);
+  company.slogan = company.slogan || profile.defaultSlogan;
+  company.mood = profile.mood;
+  const budgetValue = options.budgetValue || "¥480";
+  return {
+    company,
+    metrics: [
+      { label: "今日待确认", value: "3件", hint: "只看要老板拍板的事" },
+      { label: "AI已完成", value: "5件", hint: profile.doneHint },
+      { label: profile.metricLead[0], value: profile.metricLead[1], hint: profile.metricLead[2] },
+      { label: "本月预算", value: budgetValue, hint: "可随时暂停" },
+    ],
+    agents: profile.agents.map(([role, plainRole, status, progress], index) => ({
+      id: `${company.id}_agent_${index + 1}`,
+      role,
+      plainRole,
+      status,
+      progress,
+    })),
+    tasks: profile.tasks.map(([title, body, owner, nextStep], index) => ({
+      id: `${company.id}_task_${index + 1}`,
+      title,
+      body,
+      owner,
+      status: index === 0 ? "待老板确认" : "AI新建议",
+      priority: "今天",
+      nextStep,
+    })),
+    documents: profile.documents.map(([prefix, title, type, age]) => ({
+      id: `${company.id}_${prefix}`,
+      title,
+      type,
+      age,
+    })),
+    channels: profile.channels.map(([name, status, action], index) => ({
+      id: `${company.id}_channel_${index + 1}`,
+      name,
+      status,
+      action,
+    })),
+    activity: [
+      { id: `${company.id}_log_1`, time: "刚刚", text: `AI已为${company.name}生成第一版经营看板。` },
+      { id: `${company.id}_log_2`, time: "3分钟前", text: `AI整理了${company.industry || "主营业务"}相关的客户和资料方向。` },
+      { id: `${company.id}_log_3`, time: "8分钟前", text: "AI准备了今天需要老板确认的事项。" },
+    ],
+    inbox: {
+      title: profile.inbox[0],
+      body: profile.inbox[1],
+    },
+    socialDraft: {
+      title: profile.socialDraft[0],
+      body: profile.socialDraft[1],
+      status: "草稿，未发送",
+    },
+    cycleCount: Number(options.cycleCount) || 0,
+  };
+}
+
+function shouldRepairClonedWorkspace(workspace) {
+  const company = workspace?.company || {};
+  if (!company.name || company.name === "顺达机械" || businessKind(company) === "industrial") return false;
+  const text = JSON.stringify({
+    tasks: workspace.tasks,
+    documents: workspace.documents,
+    agents: workspace.agents,
+    inbox: workspace.inbox,
+    socialDraft: workspace.socialDraft,
+    channels: workspace.channels,
+  });
+  return /顺达机械|设备巡检|设备维护|工业园|买过配件|巡检服务|少停机|设备是否有问题/.test(text);
+}
+
 function normalizeWorkspace(workspace) {
   const fallback = workspaceFromLegacy(defaultState());
   const company = { ...fallback.company, ...(workspace?.company || {}) };
   company.id = company.id || id("company");
   company.slug = company.slug || `company-${company.id.replace(/^company_/, "").slice(0, 8)}`;
-  return {
+  const normalized = {
     company,
     metrics: Array.isArray(workspace?.metrics) ? workspace.metrics : fallback.metrics,
     agents: Array.isArray(workspace?.agents) ? workspace.agents : fallback.agents,
@@ -331,6 +536,11 @@ function normalizeWorkspace(workspace) {
     socialDraft: workspace?.socialDraft || fallback.socialDraft,
     cycleCount: Number(workspace?.cycleCount) || 0,
   };
+  if (shouldRepairClonedWorkspace(normalized)) {
+    const budget = normalized.metrics.find((item) => item.label === "本月预算")?.value;
+    return workspaceTemplateForCompany(company, { budgetValue: budget, cycleCount: normalized.cycleCount });
+  }
+  return normalized;
 }
 
 function normalizeState(rawState) {
@@ -740,32 +950,14 @@ async function handleApi(req, res) {
     if (body.mode === "new") {
       const newCompanyId = id("company");
       const slug = `company-${newCompanyId.replace(/^company_/, "")}`;
-      workspace = normalizeWorkspace({
-        ...workspaceFromLegacy(defaultState()),
-        company: {
-          id: newCompanyId,
-          slug,
-          name: companyName,
-          industry: cleanText(body.industry, "请补充主营业务", 80),
-          website: cleanText(body.website, "", 120),
-          slogan: cleanText(body.slogan, "AI会先整理公司介绍、客户画像、获客话术和收款准备清单", 120),
-          mood: `新公司“${companyName}”已建好，AI员工开始整理经营事项。`,
-        },
+      workspace = workspaceTemplateForCompany({
+        id: newCompanyId,
+        slug,
+        name: companyName,
+        industry: cleanText(body.industry, "请补充主营业务", 80),
+        website: cleanText(body.website, "", 120),
+        slogan: cleanText(body.slogan, "", 120),
       });
-      workspace.inbox = {
-        title: "新公司看板已建好",
-        body: `当前公司已切换为${companyName}。建议先补齐主营业务、客户来源和收款方式。`,
-      };
-      workspace.tasks.unshift({
-        id: id("task"),
-        title: `为${companyName}补齐第一批经营资料`,
-        body: "AI会先整理公司介绍、客户画像、获客话术和收款准备清单。",
-        owner: "总经理AI",
-        status: "AI新建议",
-        priority: "今天",
-        nextStep: "老板确认后，AI继续生成可直接使用的材料。",
-      });
-      workspace.tasks = workspace.tasks.slice(0, 8);
       pushActivity(workspace, `老板新建并进入公司：${companyName}。`);
       state.companies.push(workspace);
       state.activeCompanyId = workspace.company.id;
@@ -957,12 +1149,7 @@ async function handleApi(req, res) {
           ? "刚刚完成了一步，等待老板看结果"
           : agent.status.replace("正在", "继续"),
     }));
-    const suggestions = [
-      ["给5个老客户做回访名单", "AI建议先联系一年内买过配件的老客户，成功率最高。", "销售AI"],
-      ["把巡检服务写成一页纸", "AI会写成客户能看懂的一页介绍，不讲复杂技术。", "文案AI"],
-      ["整理本周员工安排", "AI会把销售、售后、库房三类工作列清楚。", "总经理AI"],
-      ["准备收款开通清单", "AI会列出微信、支付宝、对公收款分别需要哪些资料。", "财务AI"],
-    ];
+    const suggestions = profileForCompany(workspace.company).cycleSuggestions;
     const [title, body, owner] = suggestions[workspace.cycleCount % suggestions.length];
     workspace.tasks.unshift({
       id: id("task"),

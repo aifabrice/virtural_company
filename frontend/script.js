@@ -305,7 +305,14 @@ function conversationGreeting() {
   const company = dashboardState.company || fallbackDashboard.company;
   const tasks = dashboardState.tasks || [];
   const firstTask = tasks[0]?.title ? `今天建议先看：${tasks[0].title}。` : "今天我会先整理最要紧的经营事项。";
-  return `我在这里帮${company.name || "公司"}推进经营任务。${firstTask}你可以直接吩咐我找客户、写话术、做报价或整理员工安排。`;
+  const kind = companyKind(company);
+  const examples =
+    kind === "investment"
+      ? "找项目源、写项目跟进、做投资方案或整理尽调安排"
+      : kind === "trade"
+        ? "找采购客户、写询价回复、做报价单或整理发货回款"
+        : "找客户、写跟进话术、做方案报价或整理员工安排";
+  return `我在这里帮${company.name || "公司"}推进经营任务。${firstTask}你可以直接吩咐我${examples}。`;
 }
 
 function renderConversation() {
@@ -395,10 +402,16 @@ function renderDashboard(data) {
   }
 
   els.companySlug.textContent = `/dashboard/${company.slug || "fitscope"}`;
+  const topbarBrand = document.querySelector(".topbar .brand");
+  if (topbarBrand) {
+    topbarBrand.href = `/dashboard/${company.slug || "fitscope"}`;
+    topbarBrand.setAttribute("aria-label", `${company.name || "公司"}经营看板`);
+  }
   document.querySelector(".brand > span").textContent = company.name || "顺达机械";
   els.companyName.textContent = company.name || "顺达机械";
   els.companyMood.textContent = company.mood || "AI员工正在替公司推进今天的经营任务";
   els.updatedAt.textContent = `更新：${updatedAt || "刚刚"}`;
+  updateQuickActions(company);
 
   els.metricGrid.innerHTML = metrics
     .map(
@@ -529,6 +542,50 @@ function moneyMetric() {
   return dashboardState.metrics?.find((item) => item.label === "本月预算")?.value || "¥0";
 }
 
+function companyKind(company) {
+  const text = `${company?.name || ""} ${company?.industry || ""} ${company?.slogan || ""}`;
+  if (/投资|资本|基金|股权|融资|并购|投行|资产|财务顾问/.test(text)) return "investment";
+  if (/贸易|批发|供应链|进出口|经销|代理/.test(text)) return "trade";
+  if (/门店|零售|餐饮|美容|服装|超市|酒店|民宿/.test(text)) return "retail";
+  if (/设备|机械|工厂|制造|维修|巡检|生产/.test(text)) return "industrial";
+  return "general";
+}
+
+function quickActionsForCompany(company) {
+  const kind = companyKind(company);
+  if (kind === "investment") {
+    return [
+      ["找项目源", "帮我找20个可能适合投资或合作的项目来源渠道"],
+      ["写跟进消息", "帮我写一条发给项目方或合作伙伴的跟进消息"],
+      ["做投资方案", "帮我做一份投资合作介绍和筛选标准"],
+      ["安排尽调", "帮我把今天项目筛选、尽调和跟进工作列出来"],
+    ];
+  }
+  if (kind === "trade") {
+    return [
+      ["找采购客户", "帮我找16个可能采购公司产品的客户"],
+      ["写询价回复", "帮我写一条发给采购客户的报价跟进消息"],
+      ["做报价单", "帮我做一份产品报价和交付说明"],
+      ["安排发货", "帮我把今天报价、发货和回款工作列出来"],
+    ];
+  }
+  return [
+    ["找10个客户", "帮我找10个适合公司业务的潜在客户"],
+    ["写跟进消息", "帮我写一条客户跟进消息"],
+    ["做方案报价", "帮我做一份服务方案和报价"],
+    ["安排员工", "帮我把今天员工要做的事列出来"],
+  ];
+}
+
+function updateQuickActions(company) {
+  quickActionsForCompany(company).forEach(([label, prompt], index) => {
+    const button = els.quickActionButtons[index];
+    if (!button) return;
+    button.textContent = label;
+    button.dataset.quick = prompt;
+  });
+}
+
 function setModal(title, bodyHtml, key = "") {
   els.modalTitle.textContent = title;
   els.modalBody.innerHTML = bodyHtml;
@@ -542,8 +599,8 @@ function companyForm(mode) {
   const company = dashboardState.company || fallbackDashboard.company;
   const isNew = mode === "new";
   return `<form class="modal-form" data-form="company" data-mode="${isNew ? "new" : "settings"}">
-    <label>公司名称<input name="name" value="${escapeHtml(isNew ? "" : company.name || "")}" placeholder="例如：顺达机械" required /></label>
-    <label>主营业务<input name="industry" value="${escapeHtml(isNew ? "" : company.industry || "")}" placeholder="例如：设备维修、门店零售、贸易批发" required /></label>
+    <label>公司名称<input name="name" value="${escapeHtml(isNew ? "" : company.name || "")}" placeholder="例如：顺为投资" required /></label>
+    <label>主营业务<input name="industry" value="${escapeHtml(isNew ? "" : company.industry || "")}" placeholder="例如：投资管理、设备维修、门店零售、贸易批发" required /></label>
     <label>官网或联系方式<input name="website" value="${escapeHtml(isNew ? "" : company.website || "")}" placeholder="可填网址、电话或微信号" /></label>
     <label>一句话介绍<textarea name="slogan" rows="3" placeholder="用一句话说明公司最能帮客户解决什么问题">${escapeHtml(isNew ? "" : company.slogan || "")}</textarea></label>
     <div class="modal-actions">
@@ -566,7 +623,14 @@ function ownerForm() {
 
 function documentText(doc) {
   const company = dashboardState.company || fallbackDashboard.company;
+  const kind = companyKind(company);
   if (doc.id.includes("leads")) {
+    if (kind === "investment") {
+      return `${company.name}项目来源清单\n1. FA和财务顾问渠道\n2. 券商、律所、会计师事务所\n3. 产业园和创业服务机构\n4. 老合作伙伴转介绍\n建议话术：先说明关注方向和项目阶段，再约一次简短沟通。`;
+    }
+    if (kind === "trade") {
+      return `${company.name}采购客户名单\n1. 老客户采购负责人\n2. 同行业渠道商\n3. 下游生产或门店客户\n建议话术：先问近期采购计划，再给清楚报价和交付周期。`;
+    }
     return `${company.name}客户开发名单\n1. 附近工业园设备负责人\n2. 老客户采购负责人\n3. 同行业转介绍客户\n建议话术：先问设备最近运行是否稳定，再介绍巡检服务。`;
   }
   if (doc.id.includes("website") || doc.id.includes("site")) {
@@ -575,7 +639,13 @@ function documentText(doc) {
   if (doc.id.includes("pay")) {
     return "收款开通清单\n1. 营业执照\n2. 法人或经办人信息\n3. 对公账户\n4. 微信/支付宝商户资料\n注意：正式开通前需要老板确认。";
   }
-  return `${company.name}今日经营简报\n今日待确认：${dashboardState.tasks?.slice(0, 3).map((task) => task.title).join("、") || "暂无"}\nAI建议：先确认报价，再推进老客户回访和收款准备。`;
+  const advice =
+    kind === "investment"
+      ? "先确认投资方向，再推进项目来源和对外介绍。"
+      : kind === "trade"
+        ? "先确认报价口径，再推进采购客户和回款准备。"
+        : "先确认关键事项，再推进客户、资料和收款准备。";
+  return `${company.name}今日经营简报\n今日待确认：${dashboardState.tasks?.slice(0, 3).map((task) => task.title).join("、") || "暂无"}\nAI建议：${advice}`;
 }
 
 function openModal(key, detail) {
@@ -808,14 +878,22 @@ async function runCycle() {
     pushLog("> AI员工已完成一轮检查");
   } catch {
     toast("后端暂时不可用，已新增本地建议");
+    const company = dashboardState.company || fallbackDashboard.company;
+    const kind = companyKind(company);
+    const localIdea =
+      kind === "investment"
+        ? ["整理本周项目跟进表", "AI会把项目名称、阶段、负责人、下一步动作列清楚。", "项目AI"]
+        : kind === "trade"
+          ? ["整理本周报价和发货安排", "AI会把报价、库存、发货和回款列清楚。", "总经理AI"]
+          : ["给老板准备一个新方案", "AI建议先整理客户、资料、报价和员工安排，形成今天可执行的清单。", "总经理AI"];
     dashboardState.tasks.unshift({
       id: `local_${Date.now()}`,
-      title: "给老板准备一个新方案",
-      body: "AI建议先做一场老客户回访活动：不推销，先问设备是否有问题，再顺手介绍巡检服务。",
-      owner: "总经理AI",
+      title: localIdea[0],
+      body: localIdea[1],
+      owner: localIdea[2],
       status: "AI新建议",
       priority: "今天",
-      nextStep: "老板确认后，AI继续写话术和名单。",
+      nextStep: "老板确认后，AI继续整理成可执行材料。",
     });
     renderDashboard(dashboardState);
   } finally {
