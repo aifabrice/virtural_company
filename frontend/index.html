@@ -15,7 +15,7 @@
     <section class="login-view" id="loginView" aria-label="老板入口">
       <nav class="login-nav">
         <a class="brand lockup" href="/">企小帮</a>
-        <button class="bevel" id="demoLoginTop" type="button">进入演示公司</button>
+        <button class="bevel" id="demoLoginTop" type="button">登录公司</button>
       </nav>
       <main class="login-main">
         <div class="login-copy">
@@ -30,9 +30,11 @@
           <label for="ownerName">怎么称呼您</label>
           <input id="ownerName" name="ownerName" value="张老板" autocomplete="name" />
           <label for="ownerPhone">手机或邮箱</label>
-          <input id="ownerPhone" name="ownerPhone" placeholder="可不填，先进入演示" autocomplete="email" />
+          <input id="ownerPhone" name="ownerPhone" placeholder="用于老板身份记录，可不填" autocomplete="email" />
+          <label for="ownerCode">登录口令</label>
+          <input id="ownerCode" name="ownerCode" placeholder="请输入服务器上的登录口令" autocomplete="one-time-code" inputmode="numeric" required />
           <button class="god-mode" type="submit">进入顺达机械看板</button>
-          <p class="meta">本地演示版不会发送短信、邮件或产生扣费。</p>
+          <p class="meta">登录后才能访问公司看板。系统不会发送短信、邮件或产生扣费。</p>
         </form>
       </main>
     </section>

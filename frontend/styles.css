@@ -668,6 +668,75 @@ textarea::placeholder { color: oklch(0.58 0.02 72); }
 }
 .modal h2 { margin: 0 42px 12px 0; }
 .modal p { margin-bottom: 8px; color: var(--muted); }
+.modal strong { color: var(--ink); }
+.modal-form {
+  display: grid;
+  gap: 13px;
+  margin-top: 14px;
+}
+.modal-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+.modal-form input,
+.modal-form textarea {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  outline: none;
+  background: white;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.5;
+  padding: 10px 12px;
+}
+.modal-form textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+.modal-list {
+  display: grid;
+  gap: 10px;
+  max-height: min(56vh, 520px);
+  overflow: auto;
+  margin-top: 14px;
+  padding-right: 4px;
+}
+.modal-item {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-2);
+  padding: 13px;
+}
+.modal-item strong { display: block; margin-bottom: 5px; }
+.modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+}
+.modal-actions .god-mode,
+.modal-actions .bevel {
+  min-height: 42px;
+}
+.copy-panel {
+  max-height: min(40vh, 360px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fffaf0;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  padding: 13px;
+}
 .toast-region {
   position: fixed;
   right: 18px;

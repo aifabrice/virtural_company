@@ -1,6 +1,11 @@
 const API_BASE = location.protocol === "file:" ? "http://localhost:5176" : "";
 
 const fallbackDashboard = {
+  owner: {
+    name: "张老板",
+    phone: "",
+    reportTime: "每天上午9点",
+  },
   company: {
     slug: "fitscope",
     name: "顺达机械",
@@ -85,16 +90,9 @@ const terminalLines = [
 ];
 
 const modalCopy = {
-  credits: ["充值", "这里用于给AI员工增加可用次数。当前是本地演示版，不会产生真实扣费。"],
-  newCompany: ["新建公司", "正式版可以为另一家公司新建看板，例如门店、工厂、贸易公司或服务公司。"],
-  companies: ["我的公司", "当前公司：顺达机械。正式版可以在多家公司之间切换。"],
-  upgrade: ["升级套餐", "升级后可以让AI做更多客户开发、写更多资料、跑更多经营任务。当前只做演示。"],
-  companySettings: ["公司设置", "这里可以修改公司名称、主营业务、联系方式、官网域名和收款方式。"],
-  profileSettings: ["老板资料", "这里可以设置老板姓名、接收提醒方式，以及每天汇报时间。"],
   about: ["这是干什么的", "这是一个AI公司经营系统。老板只要确认关键事项，AI员工会持续整理客户、写材料、生成任务、准备官网和提醒下一步。"],
   doctrine: ["使用原则", "简单说三条：小事让AI先做；重要事老板确认；每天只看最该处理的几件事。"],
   faq: ["常见问题", "它不会替老板乱发消息、乱扣钱、乱改公司资料。涉及对外发送和收款，都需要老板确认。"],
-  manageTasks: ["查看全部", "这里可以查看所有待办事项，决定哪些让AI继续做、哪些交给员工做、哪些先放一放。"],
   health: ["系统自检", "正在检查前端页面、本地后端和 Claude Code 连接状态。"],
 };
 
@@ -106,6 +104,7 @@ const els = {
   demoLoginTop: document.querySelector("#demoLoginTop"),
   ownerName: document.querySelector("#ownerName"),
   ownerPhone: document.querySelector("#ownerPhone"),
+  ownerCode: document.querySelector("#ownerCode"),
   companySlug: document.querySelector("#companySlug"),
   companyName: document.querySelector("#companyName"),
   companyMood: document.querySelector("#companyMood"),
@@ -148,6 +147,7 @@ let dashboardState = fallbackDashboard;
 let claudeBusy = false;
 let claudeConnected = false;
 let passiveTimer = null;
+let modalCopyText = "";
 const compactViewport = window.matchMedia("(max-width: 980px)");
 
 function escapeHtml(value) {
@@ -162,6 +162,7 @@ function escapeHtml(value) {
 function fetchJson(path, options = {}) {
   return fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: "include",
     headers: {
       "content-type": "application/json",
       "x-qxb-local": "1",
@@ -170,6 +171,9 @@ function fetchJson(path, options = {}) {
   }).then(async (response) => {
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.ok === false) {
+      if (response.status === 401 && !path.startsWith("/api/auth/")) {
+        redirectToLogin("登录已过期，请重新输入口令。");
+      }
       throw new Error(data.error || `HTTP ${response.status}`);
     }
     return data;
@@ -206,6 +210,10 @@ function showLogin() {
   els.loginView.hidden = false;
   els.productView.hidden = true;
   document.body.classList.remove("dashboard-ready");
+  if (passiveTimer) {
+    window.clearInterval(passiveTimer);
+    passiveTimer = null;
+  }
 }
 
 function showProduct() {
@@ -215,6 +223,12 @@ function showProduct() {
   els.productView.hidden = false;
   els.appShell.classList.toggle("chat-open", !compactViewport.matches);
   document.body.classList.add("dashboard-ready");
+}
+
+function redirectToLogin(message) {
+  showLogin();
+  if (location.pathname !== "/login") history.replaceState(null, "", "/login");
+  if (message) toast(message);
 }
 
 function renderDashboard(data) {
@@ -322,36 +336,191 @@ async function loadDashboard({ quiet = false } = {}) {
   }
 }
 
-async function login(ownerName, ownerPhone) {
-  localStorage.setItem("qxb_logged_in", "1");
-  showProduct();
-  pushLog("> 老板已进入公司看板");
+async function login(ownerName, ownerPhone, ownerCode) {
+  const code = String(ownerCode || "").trim();
+  if (!code) {
+    toast("请输入登录口令");
+    els.ownerCode.focus();
+    return;
+  }
+  const submitButton = els.loginForm.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
   try {
     const data = await fetchJson("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ name: ownerName, phone: ownerPhone }),
+      body: JSON.stringify({ name: ownerName, phone: ownerPhone, code }),
     });
+    showProduct();
     renderDashboard(data.dashboard);
     history.replaceState(null, "", data.redirectTo || "/dashboard/fitscope");
-  } catch {
-    renderDashboard(fallbackDashboard);
-    history.replaceState(null, "", "/dashboard/fitscope");
+    pushLog("> 老板已通过口令进入公司看板");
+    toast("登录成功");
+    await checkClaudeBridge();
+    startPassiveLogs();
+  } catch (error) {
+    redirectToLogin(error.message || "登录失败，请检查口令。");
+  } finally {
+    submitButton.disabled = false;
   }
-  await checkClaudeBridge();
-  startPassiveLogs();
 }
 
-function openModal(key, detail) {
-  const [title, body] = modalCopy[key] || ["提示", "这个按钮已经接好，正式版会继续完成对应操作。"];
+function moneyMetric() {
+  return dashboardState.metrics?.find((item) => item.label === "本月预算")?.value || "¥0";
+}
+
+function setModal(title, bodyHtml, key = "") {
   els.modalTitle.textContent = title;
-  els.modalBody.innerHTML = `<p>${escapeHtml(detail || body)}</p>`;
+  els.modalBody.innerHTML = bodyHtml;
+  els.modalBackdrop.dataset.current = key;
   els.modalBackdrop.hidden = false;
   els.menuPopover.classList.remove("open");
   els.menuButton.setAttribute("aria-expanded", "false");
 }
 
+function companyForm(mode) {
+  const company = dashboardState.company || fallbackDashboard.company;
+  const isNew = mode === "new";
+  return `<form class="modal-form" data-form="company" data-mode="${isNew ? "new" : "settings"}">
+    <label>公司名称<input name="name" value="${escapeHtml(isNew ? "" : company.name || "")}" placeholder="例如：顺达机械" required /></label>
+    <label>主营业务<input name="industry" value="${escapeHtml(isNew ? "" : company.industry || "")}" placeholder="例如：设备维修、门店零售、贸易批发" required /></label>
+    <label>官网或联系方式<input name="website" value="${escapeHtml(isNew ? "" : company.website || "")}" placeholder="可填网址、电话或微信号" /></label>
+    <label>一句话介绍<textarea name="slogan" rows="3" placeholder="用一句话说明公司最能帮客户解决什么问题">${escapeHtml(isNew ? "" : company.slogan || "")}</textarea></label>
+    <div class="modal-actions">
+      <button class="god-mode" type="submit">${isNew ? "保存并进入新公司" : "保存公司资料"}</button>
+    </div>
+  </form>`;
+}
+
+function ownerForm() {
+  const owner = dashboardState.owner || fallbackDashboard.owner;
+  return `<form class="modal-form" data-form="owner">
+    <label>老板姓名<input name="name" value="${escapeHtml(owner.name || "")}" required /></label>
+    <label>手机或邮箱<input name="phone" value="${escapeHtml(owner.phone || "")}" placeholder="用于系统记录，不会自动外发" /></label>
+    <label>每天汇报时间<input name="reportTime" value="${escapeHtml(owner.reportTime || "每天上午9点")}" placeholder="例如：每天上午9点" /></label>
+    <div class="modal-actions">
+      <button class="god-mode" type="submit">保存老板资料</button>
+    </div>
+  </form>`;
+}
+
+function documentText(doc) {
+  const company = dashboardState.company || fallbackDashboard.company;
+  if (doc.id.includes("leads")) {
+    return `${company.name}客户开发名单\n1. 附近工业园设备负责人\n2. 老客户采购负责人\n3. 同行业转介绍客户\n建议话术：先问设备最近运行是否稳定，再介绍巡检服务。`;
+  }
+  if (doc.id.includes("website") || doc.id.includes("site")) {
+    return `${company.name}官网资料\n主营业务：${company.industry}\n一句话介绍：${company.slogan || "帮客户把重要经营事项处理好"}\n下一步：确认联系电话、服务范围和案例。`;
+  }
+  if (doc.id.includes("pay")) {
+    return "收款开通清单\n1. 营业执照\n2. 法人或经办人信息\n3. 对公账户\n4. 微信/支付宝商户资料\n注意：正式开通前需要老板确认。";
+  }
+  return `${company.name}今日经营简报\n今日待确认：${dashboardState.tasks?.slice(0, 3).map((task) => task.title).join("、") || "暂无"}\nAI建议：先确认报价，再推进老客户回访和收款准备。`;
+}
+
+function openModal(key, detail) {
+  modalCopyText = "";
+  if (key === "manageTasks") {
+    const tasks = dashboardState.tasks || [];
+    setModal(
+      "查看全部",
+      `<p>这些事项都保留在看板里。老板只需要决定：同意、交给Claude、还是先不做。</p>
+      <div class="modal-list">
+        ${tasks
+          .map(
+            (task) => `<article class="modal-item">
+              <strong>${escapeHtml(task.title)}</strong>
+              <p>${escapeHtml(task.body)}</p>
+              <span class="meta">${escapeHtml(task.owner)} · ${escapeHtml(task.status)}</span>
+              <div class="task-actions">
+                <button type="button" data-task-choice="confirm" data-task-id="${escapeHtml(task.id)}">同意</button>
+                <button type="button" data-task-choice="claude" data-task-id="${escapeHtml(task.id)}">发给Claude</button>
+                <button type="button" data-task-choice="pause" data-task-id="${escapeHtml(task.id)}">先不做</button>
+              </div>
+            </article>`,
+          )
+          .join("")}
+      </div>`,
+      key,
+    );
+    return;
+  }
+  if (key === "newCompany") {
+    setModal("新建公司", `<p>填三项就够了，AI会按新公司重新整理经营任务。</p>${companyForm("new")}`, key);
+    return;
+  }
+  if (key === "companySettings") {
+    setModal("公司设置", `<p>改完后，看板、报告和AI提示都会按新资料更新。</p>${companyForm("settings")}`, key);
+    return;
+  }
+  if (key === "profileSettings") {
+    setModal("老板资料", `<p>这里决定系统怎么称呼您，以及每天什么时候汇报。</p>${ownerForm()}`, key);
+    return;
+  }
+  if (key === "credits") {
+    setModal(
+      "充值",
+      `<p>当前本月预算：<strong>${escapeHtml(moneyMetric())}</strong></p>
+      <p>这里先做系统内记录，不会产生真实扣费。</p>
+      <div class="modal-actions">
+        <button class="god-mode" type="button" data-server-action="topup" data-amount="100">充值¥100</button>
+        <button class="bevel" type="button" data-server-action="topup" data-amount="500">充值¥500</button>
+      </div>`,
+      key,
+    );
+    return;
+  }
+  if (key === "upgrade") {
+    setModal(
+      "升级套餐",
+      `<p>升级后，AI可以同时推进更多客户、资料、官网和收款准备。</p>
+      <div class="modal-actions">
+        <button class="god-mode" type="button" data-server-action="upgrade">开通专业版试用</button>
+      </div>`,
+      key,
+    );
+    return;
+  }
+  if (key === "companies") {
+    const company = dashboardState.company || fallbackDashboard.company;
+    setModal(
+      "我的公司",
+      `<div class="modal-list">
+        <article class="modal-item">
+          <strong>${escapeHtml(company.name)}</strong>
+          <p>${escapeHtml(company.industry)}</p>
+          <span class="meta">当前正在使用</span>
+        </article>
+      </div>
+      <div class="modal-actions">
+        <button class="bevel" type="button" data-modal="companySettings">修改当前公司</button>
+        <button class="god-mode" type="button" data-modal="newCompany">新建公司</button>
+      </div>`,
+      key,
+    );
+    return;
+  }
+  if (key === "doc" && detail?.doc) {
+    modalCopyText = documentText(detail.doc);
+    setModal(
+      detail.doc.title,
+      `<p>${escapeHtml(detail.doc.title)}已经准备好，可以复制给员工或客户再确认。</p>
+      <pre class="copy-panel">${escapeHtml(modalCopyText)}</pre>
+      <div class="modal-actions">
+        <button class="god-mode" type="button" data-copy-doc>复制内容</button>
+        <button class="bevel" type="button" data-doc-claude="${escapeHtml(detail.doc.id)}">让Claude再优化</button>
+      </div>`,
+      key,
+    );
+    return;
+  }
+  const [title, body] = modalCopy[key] || ["提示", detail || "这个按钮已经接好，会在看板里留下结果。"];
+  setModal(title, `<p>${escapeHtml(detail || body)}</p>`, key);
+}
+
 function closeModal() {
   els.modalBackdrop.hidden = true;
+  els.modalBackdrop.dataset.current = "";
+  modalCopyText = "";
 }
 
 function setClaudeStatus(message, state = "") {
@@ -453,6 +622,7 @@ async function updateTask(taskId, action) {
       body: JSON.stringify({ action }),
     });
     renderDashboard(data.dashboard);
+    if (els.modalBackdrop.dataset.current === "manageTasks") openModal("manageTasks");
     toast(action === "pause" ? "已暂缓" : "已记录，AI会继续推进");
     pushLog(action === "pause" ? `> 老板暂缓：${task.title}` : `> 老板确认：${task.title}`);
   } catch (error) {
@@ -484,6 +654,113 @@ async function runCycle() {
     renderDashboard(dashboardState);
   } finally {
     els.runCycleButton.disabled = false;
+  }
+}
+
+async function saveCompany(form) {
+  const values = Object.fromEntries(new FormData(form).entries());
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const data = await fetchJson("/api/company", {
+      method: "PATCH",
+      body: JSON.stringify({
+        mode: form.dataset.mode,
+        name: values.name,
+        industry: values.industry,
+        website: values.website,
+        slogan: values.slogan,
+      }),
+    });
+    renderDashboard(data.dashboard);
+    history.replaceState(null, "", data.dashboard?.company?.slug ? `/dashboard/${data.dashboard.company.slug}` : "/dashboard/fitscope");
+    closeModal();
+    toast(form.dataset.mode === "new" ? "新公司已建好" : "公司资料已保存");
+    pushLog(form.dataset.mode === "new" ? "> 已新建公司看板" : "> 已更新公司资料");
+  } catch (error) {
+    toast(error.message || "保存失败");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveOwner(form) {
+  const values = Object.fromEntries(new FormData(form).entries());
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const data = await fetchJson("/api/owner", {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: values.name,
+        phone: values.phone,
+        reportTime: values.reportTime,
+      }),
+    });
+    renderDashboard(data.dashboard);
+    closeModal();
+    toast("老板资料已保存");
+    pushLog("> 已更新老板资料");
+  } catch (error) {
+    toast(error.message || "保存失败");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function runServerAction(node) {
+  const action = node.dataset.serverAction;
+  node.disabled = true;
+  try {
+    const endpoint = action === "upgrade" ? "/api/plan/upgrade" : "/api/billing/top-up";
+    const body = action === "topup" ? { amount: Number(node.dataset.amount) || 100 } : {};
+    const data = await fetchJson(endpoint, { method: "POST", body: JSON.stringify(body) });
+    renderDashboard(data.dashboard);
+    closeModal();
+    toast(action === "upgrade" ? "专业版试用已开通" : "充值已记录");
+    pushLog(action === "upgrade" ? "> 已开通专业版试用" : "> 已记录充值");
+  } catch (error) {
+    toast(error.message || "操作失败");
+  } finally {
+    node.disabled = false;
+  }
+}
+
+async function updateChannel(channelId) {
+  const channel = dashboardState.channels.find((item) => item.id === channelId);
+  if (!channel) return;
+  try {
+    const data = await fetchJson(`/api/channels/${encodeURIComponent(channelId)}`, {
+      method: "PATCH",
+      body: "{}",
+    });
+    renderDashboard(data.dashboard);
+    toast(`${channel.name}已处理`);
+    pushLog(`> 已处理渠道：${channel.name}`);
+  } catch (error) {
+    toast(error.message || "渠道处理失败");
+  }
+}
+
+async function prepareSocialDraft() {
+  try {
+    const data = await fetchJson("/api/social/prepare", { method: "POST", body: "{}" });
+    renderDashboard(data.dashboard);
+    pushLog("> 已准备对外发布草稿，等待老板最终确认");
+    toast("发布草稿已准备好");
+  } catch (error) {
+    toast(error.message || "准备草稿失败");
+  }
+}
+
+async function copyModalDocument() {
+  if (!modalCopyText) return;
+  try {
+    await navigator.clipboard.writeText(modalCopyText);
+    toast("内容已复制");
+    pushLog("> 已复制资料内容");
+  } catch {
+    toast("复制失败，请手动选中内容复制");
   }
 }
 
@@ -529,11 +806,12 @@ function startPassiveLogs() {
 function initEvents() {
   els.loginForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    login(els.ownerName.value.trim() || "张老板", els.ownerPhone.value.trim());
+    login(els.ownerName.value.trim() || "张老板", els.ownerPhone.value.trim(), els.ownerCode.value.trim());
   });
 
   els.demoLoginTop.addEventListener("click", () => {
-    login(els.ownerName.value.trim() || "张老板", els.ownerPhone.value.trim());
+    els.ownerCode.focus();
+    els.loginForm.requestSubmit();
   });
 
   els.menuButton.addEventListener("click", () => {
@@ -571,21 +849,49 @@ function initEvents() {
     const docNode = target.closest("[data-doc]");
     if (docNode) {
       const doc = dashboardState.documents.find((item) => item.id === docNode.dataset.doc);
-      if (doc) openModal("doc", `${doc.title}已经准备好。老板可以直接看、改、发给员工或客户。`);
+      if (doc) openModal("doc", { doc });
       return;
     }
 
     const channelNode = target.closest("[data-channel-action]");
     if (channelNode) {
-      openModal("channel", "正式版会连接对应渠道。当前先让AI生成草稿，老板确认后再对外发送或开通。");
+      updateChannel(channelNode.dataset.channelAction);
       return;
     }
 
     const actionNode = target.closest("[data-action]");
     if (actionNode?.dataset.action === "tweet") {
-      pushLog("> 已准备对外发布草稿，等待老板最终确认");
-      toast("发布草稿已准备好");
+      prepareSocialDraft();
+      return;
     }
+
+    const serverActionNode = target.closest("[data-server-action]");
+    if (serverActionNode) {
+      runServerAction(serverActionNode);
+      return;
+    }
+
+    const copyDocNode = target.closest("[data-copy-doc]");
+    if (copyDocNode) {
+      copyModalDocument();
+      return;
+    }
+
+    const docClaudeNode = target.closest("[data-doc-claude]");
+    if (docClaudeNode) {
+      const doc = dashboardState.documents.find((item) => item.id === docClaudeNode.dataset.docClaude);
+      const text = modalCopyText;
+      closeModal();
+      runClaudeCli(`请帮我把这份资料优化得更适合传统企业老板直接使用：${doc ? doc.title : "公司资料"}。${text}`);
+    }
+  });
+
+  document.addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-form]");
+    if (!form) return;
+    event.preventDefault();
+    if (form.dataset.form === "company") saveCompany(form);
+    if (form.dataset.form === "owner") saveOwner(form);
   });
 
   els.closeChat.addEventListener("click", () => {
@@ -626,11 +932,16 @@ function initEvents() {
     }
   });
 
-  els.logoutButton.addEventListener("click", () => {
-    localStorage.removeItem("qxb_logged_in");
+  els.logoutButton.addEventListener("click", async () => {
+    try {
+      await fetchJson("/api/auth/logout", { method: "POST", body: "{}" });
+    } catch {
+      // Logout should still return to the login screen if the network is flaky.
+    }
     history.replaceState(null, "", "/login");
     showLogin();
     pushLog("> 已退出到老板入口");
+    toast("已退出");
   });
 
   els.modalClose.addEventListener("click", closeModal);
@@ -654,18 +965,27 @@ function initEvents() {
 async function init() {
   renderTerminal();
   initEvents();
-  const loggedIn = localStorage.getItem("qxb_logged_in") === "1";
-  if (location.pathname === "/login") {
+  try {
+    const session = await fetchJson("/api/auth/session");
+    if (session.loggedIn) {
+      if (session.owner?.name) els.ownerName.value = session.owner.name;
+      if (session.owner?.phone) els.ownerPhone.value = session.owner.phone;
+      showProduct();
+      renderDashboard(fallbackDashboard);
+      await loadDashboard({ quiet: true });
+      if (location.pathname === "/login") {
+        history.replaceState(null, "", `/dashboard/${session.company?.slug || "fitscope"}`);
+      }
+      await checkClaudeBridge();
+      startPassiveLogs();
+    } else {
+      if (location.pathname.startsWith("/dashboard")) history.replaceState(null, "", "/login");
+      showLogin();
+    }
+  } catch {
+    if (location.pathname.startsWith("/dashboard")) history.replaceState(null, "", "/login");
     showLogin();
-  } else if (loggedIn || location.pathname.startsWith("/dashboard")) {
-    localStorage.setItem("qxb_logged_in", "1");
-    showProduct();
-    renderDashboard(fallbackDashboard);
-    await loadDashboard({ quiet: true });
-    await checkClaudeBridge();
-    startPassiveLogs();
-  } else {
-    showLogin();
+    toast("暂时连不上后端，请稍后刷新");
   }
   window.setInterval(() => {
     if (!claudeConnected && !claudeBusy) checkClaudeBridge();

@@ -11,9 +11,13 @@ const PROJECT_ROOT = path.resolve(BACKEND_DIR, "..");
 const FRONTEND_DIR = process.env.FRONTEND_DIR || path.join(PROJECT_ROOT, "frontend");
 const DATA_DIR = process.env.DATA_DIR || path.join(PROJECT_ROOT, ".data");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
+const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
 const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
 const MAX_BODY = 24 * 1024;
 const CLAUDE_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS || 180000);
+const SESSION_COOKIE = "qxb_session";
+const SESSION_TTL_MS = Number(process.env.QXB_SESSION_TTL_MS || 7 * 24 * 60 * 60 * 1000);
+const LOGIN_CODE = process.env.QXB_LOGIN_CODE || (process.env.NODE_ENV === "production" ? "" : "888888");
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -38,6 +42,7 @@ function setCors(req, res) {
     res.setHeader("Access-Control-Allow-Origin", origin || "*");
     res.setHeader("Vary", "Origin");
   }
+  res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Headers", "content-type, x-qxb-local, x-qxb-sync");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
 }
@@ -81,6 +86,86 @@ function nowLabel() {
 
 function id(prefix) {
   return `${prefix}_${randomUUID().slice(0, 8)}`;
+}
+
+function parseCookies(req) {
+  const header = req.headers.cookie || "";
+  return Object.fromEntries(
+    header
+      .split(";")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => {
+        const index = item.indexOf("=");
+        if (index === -1) return [item, ""];
+        return [decodeURIComponent(item.slice(0, index)), decodeURIComponent(item.slice(index + 1))];
+      }),
+  );
+}
+
+function sessionCookie(value, maxAgeSeconds) {
+  const secure = process.env.QXB_COOKIE_SECURE === "1" ? "; Secure" : "";
+  return `${SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`;
+}
+
+async function loadSessions() {
+  try {
+    const raw = await fsp.readFile(SESSIONS_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const now = Date.now();
+    const sessions = {};
+    for (const [token, session] of Object.entries(parsed)) {
+      if (session && Number(session.expiresAt) > now) sessions[token] = session;
+    }
+    if (Object.keys(sessions).length !== Object.keys(parsed).length) await saveSessions(sessions);
+    return sessions;
+  } catch {
+    return {};
+  }
+}
+
+async function saveSessions(sessions) {
+  await fsp.mkdir(DATA_DIR, { recursive: true });
+  const tmp = `${SESSIONS_FILE}.${process.pid}.tmp`;
+  await fsp.writeFile(tmp, `${JSON.stringify(sessions, null, 2)}\n`, "utf8");
+  await fsp.rename(tmp, SESSIONS_FILE);
+}
+
+async function getSession(req) {
+  const token = parseCookies(req)[SESSION_COOKIE];
+  if (!token) return null;
+  const sessions = await loadSessions();
+  const session = sessions[token];
+  if (!session || Number(session.expiresAt) <= Date.now()) {
+    delete sessions[token];
+    await saveSessions(sessions);
+    return null;
+  }
+  return { token, ...session };
+}
+
+async function requireSession(req, res) {
+  const session = await getSession(req);
+  if (session) return session;
+  sendJson(res, 401, { ok: false, error: "请先登录老板入口。" });
+  return null;
+}
+
+function cleanText(value, fallback, maxLength = 80) {
+  const text = String(value || "").trim().replace(/\s+/g, " ");
+  return (text || fallback || "").slice(0, maxLength);
+}
+
+function pushActivity(state, text) {
+  state.activity.unshift({ id: id("log"), time: nowLabel(), text });
+  state.activity = state.activity.slice(0, 12);
+}
+
+function currentBudget(state) {
+  const budget = state.metrics.find((item) => item.label === "本月预算");
+  const match = String(budget?.value || "").match(/\d+/);
+  return Number(match?.[0] || 0);
 }
 
 function defaultState() {
@@ -483,6 +568,16 @@ async function handleApi(req, res) {
 
   if (url.pathname === "/api/auth/session" && req.method === "GET") {
     const state = await loadState();
+    const session = await getSession(req);
+    if (!session) {
+      sendJson(res, 200, {
+        ok: true,
+        loggedIn: false,
+        loginRequired: true,
+        loginConfigured: Boolean(LOGIN_CODE),
+      });
+      return;
+    }
     sendJson(res, 200, {
       ok: true,
       loggedIn: true,
@@ -494,13 +589,30 @@ async function handleApi(req, res) {
 
   if (url.pathname === "/api/auth/login" && req.method === "POST") {
     const body = await readJsonBody(req);
+    if (!LOGIN_CODE) {
+      sendJson(res, 503, { ok: false, error: "服务器还没有配置登录口令。" });
+      return;
+    }
+    if (String(body.code || "").trim() !== LOGIN_CODE) {
+      sendJson(res, 401, { ok: false, error: "登录口令不正确，请重新输入。" });
+      return;
+    }
     const state = await loadState();
     state.owner.name = String(body.name || state.owner.name || "老板").trim().slice(0, 24);
     state.owner.phone = String(body.phone || body.email || "").trim().slice(0, 80);
     state.owner.lastLoginAt = nowLabel();
-    state.activity.unshift({ id: id("log"), time: nowLabel(), text: `${state.owner.name}进入了公司经营看板。` });
-    state.activity = state.activity.slice(0, 12);
+    pushActivity(state, `${state.owner.name}进入了公司经营看板。`);
     await saveState(state);
+    const token = `${randomUUID()}${randomUUID()}`;
+    const sessions = await loadSessions();
+    sessions[token] = {
+      ownerName: state.owner.name,
+      companyId: state.company.id,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + SESSION_TTL_MS,
+    };
+    await saveSessions(sessions);
+    res.setHeader("Set-Cookie", sessionCookie(token, Math.floor(SESSION_TTL_MS / 1000)));
     sendJson(res, 200, {
       ok: true,
       redirectTo: `/dashboard/${state.company.slug}`,
@@ -509,8 +621,156 @@ async function handleApi(req, res) {
     return;
   }
 
+  if (url.pathname === "/api/auth/logout" && req.method === "POST") {
+    const token = parseCookies(req)[SESSION_COOKIE];
+    if (token) {
+      const sessions = await loadSessions();
+      delete sessions[token];
+      await saveSessions(sessions);
+    }
+    res.setHeader("Set-Cookie", sessionCookie("", 0));
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  const session = await requireSession(req, res);
+  if (!session) return;
+
   if (url.pathname === "/api/dashboard" && req.method === "GET") {
     const state = await loadState();
+    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state) });
+    return;
+  }
+
+  if (url.pathname === "/api/company" && req.method === "PATCH") {
+    const body = await readJsonBody(req);
+    const state = await loadState();
+    const previousName = state.company.name;
+    state.company.name = cleanText(body.name, state.company.name, 40);
+    state.company.industry = cleanText(body.industry, state.company.industry, 80);
+    state.company.website = cleanText(body.website, state.company.website, 120);
+    state.company.slogan = cleanText(body.slogan, state.company.slogan, 120);
+    state.company.mood = body.mode === "new"
+      ? `新公司“${state.company.name}”已建好，AI员工开始整理经营事项。`
+      : `公司资料已更新，AI员工会按新的主营业务继续推进。`;
+    if (body.mode === "new" && previousName !== state.company.name) {
+      state.inbox = {
+        title: "新公司看板已建好",
+        body: `当前公司已切换为${state.company.name}。建议先补齐主营业务、客户来源和收款方式。`,
+      };
+      state.tasks.unshift({
+        id: id("task"),
+        title: `为${state.company.name}补齐第一批经营资料`,
+        body: "AI会先整理公司介绍、客户画像、获客话术和收款准备清单。",
+        owner: "总经理AI",
+        status: "AI新建议",
+        priority: "今天",
+        nextStep: "老板确认后，AI继续生成可直接使用的材料。",
+      });
+      state.tasks = state.tasks.slice(0, 8);
+    }
+    pushActivity(state, body.mode === "new" ? `老板新建并进入公司：${state.company.name}。` : `老板更新了公司资料：${state.company.name}。`);
+    await saveState(state);
+    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state) });
+    return;
+  }
+
+  if (url.pathname === "/api/owner" && req.method === "PATCH") {
+    const body = await readJsonBody(req);
+    const state = await loadState();
+    state.owner.name = cleanText(body.name, state.owner.name, 24);
+    state.owner.phone = cleanText(body.phone || body.email, state.owner.phone, 80);
+    state.owner.reportTime = cleanText(body.reportTime, state.owner.reportTime || "每天上午9点", 40);
+    pushActivity(state, `${state.owner.name}更新了老板资料和汇报时间。`);
+    await saveState(state);
+    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state) });
+    return;
+  }
+
+  if (url.pathname === "/api/billing/top-up" && req.method === "POST") {
+    const body = await readJsonBody(req);
+    const state = await loadState();
+    const amount = Math.max(10, Math.min(9999, Number(body.amount) || 100));
+    const budget = state.metrics.find((item) => item.label === "本月预算");
+    if (budget) {
+      budget.value = `¥${currentBudget(state) + amount}`;
+      budget.hint = "已增加可用次数";
+    }
+    pushActivity(state, `老板给AI员工充值了¥${amount}预算。`);
+    state.inbox = {
+      title: "充值已记录",
+      body: `本月AI经营预算已增加¥${amount}。后续可以继续让AI整理客户、文案和报告。`,
+    };
+    await saveState(state);
+    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state) });
+    return;
+  }
+
+  if (url.pathname === "/api/plan/upgrade" && req.method === "POST") {
+    const state = await loadState();
+    const budget = state.metrics.find((item) => item.label === "本月预算");
+    if (budget) budget.hint = "专业版试用中";
+    state.company.mood = "专业版已开通试用，AI员工可以同时推进客户、资料、官网和收款准备。";
+    state.inbox = {
+      title: "专业版试用已开通",
+      body: "现在可以让AI一次性整理更多客户名单、销售话术、官网内容和老板日报。",
+    };
+    pushActivity(state, "老板开通了专业版试用。");
+    await saveState(state);
+    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state) });
+    return;
+  }
+
+  const channelMatch = url.pathname.match(/^\/api\/channels\/([^/]+)$/);
+  if (channelMatch && req.method === "PATCH") {
+    const state = await loadState();
+    const channel = state.channels.find((item) => item.id === channelMatch[1]);
+    if (!channel) {
+      sendJson(res, 404, { ok: false, error: "没有找到这个渠道。" });
+      return;
+    }
+    if (channel.id === "channel_wechat") {
+      channel.status = "草稿已生成，待老板复制发送";
+      channel.action = "重新生成草稿";
+      state.socialDraft.status = "已准备，等待老板确认发送";
+      state.inbox = {
+        title: "微信草稿已准备好",
+        body: "建议先发给最近合作过的老客户，语气以回访为主，不要硬推销。",
+      };
+    } else if (channel.id === "channel_site") {
+      channel.status = "官网绑定资料已列好";
+      channel.action = "查看资料";
+      state.documents.unshift({ id: id("doc_site"), title: "官网绑定资料清单", type: "官网资料", age: "刚刚" });
+      state.documents = state.documents.slice(0, 8);
+      state.inbox = {
+        title: "官网绑定资料已列好",
+        body: "需要准备域名、公司介绍、联系电话和服务范围。老板确认后再对外发布。",
+      };
+    } else if (channel.id === "channel_pay") {
+      channel.status = "收款清单已准备";
+      channel.action = "查看清单";
+      state.documents.unshift({ id: id("doc_pay"), title: "收款开通清单", type: "财务资料", age: "刚刚" });
+      state.documents = state.documents.slice(0, 8);
+      state.inbox = {
+        title: "收款开通清单已准备",
+        body: "AI已列出微信、支付宝和对公收款分别需要准备的材料。",
+      };
+    }
+    pushActivity(state, `老板处理了渠道：${channel.name}。`);
+    await saveState(state);
+    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state), channel });
+    return;
+  }
+
+  if (url.pathname === "/api/social/prepare" && req.method === "POST") {
+    const state = await loadState();
+    state.socialDraft.status = "已准备，等待老板确认发送";
+    state.inbox = {
+      title: "对外发布草稿已准备好",
+      body: "草稿可以先复制给员工检查，确认无误后再发给客户或朋友圈。",
+    };
+    pushActivity(state, "AI已准备对外发布草稿，等待老板最终确认。");
+    await saveState(state);
     sendJson(res, 200, { ok: true, dashboard: publicDashboard(state) });
     return;
   }
@@ -667,6 +927,30 @@ function routeToIndex(pathname) {
 
 async function serveStatic(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
+  const isDashboardPage = url.pathname === "/dashboard" || /^\/dashboard\/[^/.]+$/.test(url.pathname);
+  if (isDashboardPage) {
+    const session = await getSession(req);
+    if (!session) {
+      res.writeHead(302, {
+        location: "/login",
+        "cache-control": "no-store",
+      });
+      res.end();
+      return;
+    }
+  }
+  if (url.pathname === "/login") {
+    const session = await getSession(req);
+    if (session) {
+      const state = await loadState();
+      res.writeHead(302, {
+        location: `/dashboard/${state.company.slug || "fitscope"}`,
+        "cache-control": "no-store",
+      });
+      res.end();
+      return;
+    }
+  }
   const dashboardAsset = url.pathname.match(/^\/dashboard\/(styles\.css|script\.js)$/);
   const requested = dashboardAsset
     ? `/${dashboardAsset[1]}`

@@ -1,3 +1,10 @@
+**Auth And Button Actions QA**
+- Request: Keep existing buttons while making them actually respond, and replace rough direct dashboard access with login protection.
+- Auth check: unauthenticated `GET /dashboard/fitscope` returns `302 /login`; unauthenticated `GET /api/dashboard` returns `401`.
+- Login check: wrong code is rejected; correct code returns an HttpOnly session cookie and opens `/dashboard/fitscope`.
+- Button API check: company settings, owner profile, top-up, upgrade, channel actions, social draft preparation, and task confirm actions all persist to the dashboard state.
+- final result: passed
+
 **Latest QA - Chinese Owner Version**
 - Request: Convert the prototype into a Chinese version simple enough for a 50-year-old traditional business owner.
 - Desktop evidence: `output/playwright/chinese-desktop-final.png`
