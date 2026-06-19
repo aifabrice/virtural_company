@@ -13,6 +13,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(PROJECT_ROOT, ".data");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
 const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
+const AGENT_WORKSPACES_DIR = path.join(DATA_DIR, "agent_workspaces");
 const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
 const MAX_BODY = 24 * 1024;
 const CLAUDE_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS || 180000);
@@ -569,7 +570,151 @@ function workspaceTemplateForCompany(input, options = {}) {
       status: "草稿，未发送",
     },
     cycleCount: Number(options.cycleCount) || 0,
+    meta: {
+      creationStatus: options.creationStatus || "draft",
+      agentWorkspaceId: company.id,
+      agentWorkspaceVersion: 1,
+      createdAt: options.createdAt || Date.now(),
+      updatedAt: Date.now(),
+    },
   };
+}
+
+function agentWorkspaceRoot(companyId) {
+  return path.join(AGENT_WORKSPACES_DIR, String(companyId || "unknown"));
+}
+
+function safeAgentWorkspacePath(root, relativePath) {
+  const filePath = path.resolve(root, relativePath);
+  if (filePath !== root && !filePath.startsWith(`${root}${path.sep}`)) {
+    throw new Error("公司工程路径不正确。");
+  }
+  return filePath;
+}
+
+async function writeAgentWorkspaceFile(root, relativePath, content) {
+  const filePath = safeAgentWorkspacePath(root, relativePath);
+  await fsp.mkdir(path.dirname(filePath), { recursive: true });
+  await fsp.writeFile(filePath, content, "utf8");
+}
+
+function jsonBlock(value) {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function departmentBlueprints(workspace) {
+  return (workspace.agents || []).map((agent, index) => ({
+    id: agent.id,
+    order: index + 1,
+    name: agent.role,
+    responsibility: agent.plainRole,
+    currentFocus: agent.status,
+    operatingRule: "先整理材料和建议，涉及对外发送、扣费、签约、收款前必须等老板确认。",
+  }));
+}
+
+function researchBrief(workspace, aiNotes = "") {
+  const company = workspace.company;
+  const kind = businessKind(company);
+  const focus =
+    kind === "investment"
+      ? ["项目来源", "投资方向", "尽调材料", "对外合作介绍"]
+      : kind === "trade"
+        ? ["采购客户", "产品报价", "交付周期", "回款提醒"]
+        : ["客户画像", "对外资料", "员工安排", "收款准备"];
+  return [
+    `# ${company.name}经营研究底稿`,
+    "",
+    `公司名称：${company.name}`,
+    `主营业务：${company.industry}`,
+    `一句话介绍：${company.slogan || "待补充"}`,
+    "",
+    "优先研究方向：",
+    ...focus.map((item, index) => `${index + 1}. ${item}`),
+    "",
+    "AI初步判断：",
+    `${company.name}的新公司看板应先解决“老板每天看什么、AI先做什么、哪些事项必须确认”三个问题。`,
+    "",
+    aiNotes ? `AI补充材料：\n${aiNotes}` : "AI补充材料：等待下一轮经营指令继续补充。",
+    "",
+  ].join("\n");
+}
+
+function operatingBacklog(workspace) {
+  return (workspace.tasks || []).map((task, index) => ({
+    id: task.id,
+    order: index + 1,
+    title: task.title,
+    reason: task.body,
+    owner: task.owner,
+    status: task.status,
+    bossDecision: task.nextStep,
+  }));
+}
+
+async function materializeAgentWorkspace(workspace, owner, options = {}) {
+  const root = agentWorkspaceRoot(workspace.company.id);
+  const departments = departmentBlueprints(workspace);
+  const backlog = operatingBacklog(workspace);
+  const generatedAt = new Date().toISOString();
+  await fsp.mkdir(root, { recursive: true });
+  await writeAgentWorkspaceFile(
+    root,
+    "company_profile.json",
+    jsonBlock({
+      version: 1,
+      generatedAt,
+      company: workspace.company,
+      owner: {
+        name: owner?.name || "老板",
+        phone: owner?.phone || "",
+      },
+      creationStatus: workspace.meta?.creationStatus || "draft",
+    }),
+  );
+  await writeAgentWorkspaceFile(root, "research/industry_brief.md", researchBrief(workspace, options.aiNotes || ""));
+  await writeAgentWorkspaceFile(root, "departments/departments.json", jsonBlock({ version: 1, generatedAt, departments }));
+  await writeAgentWorkspaceFile(root, "tasks/operating_backlog.json", jsonBlock({ version: 1, generatedAt, tasks: backlog }));
+  await writeAgentWorkspaceFile(
+    root,
+    "documents/today_brief.md",
+    [
+      `# ${workspace.company.name}今日经营简报`,
+      "",
+      `当前阶段：${workspace.meta?.creationStatus || "draft"}`,
+      "",
+      "老板今天只看：",
+      ...backlog.slice(0, 3).map((task, index) => `${index + 1}. ${task.title}`),
+      "",
+      `对外资料草稿：${workspace.socialDraft?.title || "待生成"}`,
+      workspace.socialDraft?.body || "",
+      "",
+    ].join("\n"),
+  );
+  await writeAgentWorkspaceFile(
+    root,
+    "README.md",
+    [
+      `# ${workspace.company.name} Agent Workspace`,
+      "",
+      "这个目录是公司经营工程目录，供后台AI员工读取、整理和持续更新。",
+      "界面不直接暴露这里的路径，老板只在看板上看到结果和确认事项。",
+      "",
+      "- `company_profile.json`：公司基础档案",
+      "- `research/industry_brief.md`：经营研究底稿",
+      "- `departments/departments.json`：AI部门和职责",
+      "- `tasks/operating_backlog.json`：经营任务队列",
+      "- `documents/today_brief.md`：今日简报草稿",
+      "",
+    ].join("\n"),
+  );
+  workspace.meta = {
+    ...(workspace.meta || {}),
+    agentWorkspaceId: workspace.company.id,
+    agentWorkspaceVersion: 1,
+    updatedAt: Date.now(),
+  };
+  return root;
 }
 
 function shouldRepairClonedWorkspace(workspace) {
@@ -602,6 +747,13 @@ function normalizeWorkspace(workspace) {
     inbox: workspace?.inbox || fallback.inbox,
     socialDraft: workspace?.socialDraft || fallback.socialDraft,
     cycleCount: Number(workspace?.cycleCount) || 0,
+    meta: workspace?.meta || {
+      creationStatus: "ready",
+      agentWorkspaceId: company.id,
+      agentWorkspaceVersion: 1,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    },
   };
   if (shouldRepairClonedWorkspace(normalized)) {
     const budget = normalized.metrics.find((item) => item.label === "本月预算")?.value;
@@ -836,6 +988,8 @@ function runClaude(message, state) {
 
 const claudeJobs = new Map();
 const CLAUDE_JOB_TTL_MS = 10 * 60 * 1000;
+const companyCreationJobs = new Map();
+const COMPANY_CREATION_JOB_TTL_MS = 20 * 60 * 1000;
 
 function validateClaudeMessage(message) {
   if (!message) return "老板指令不能为空。";
@@ -901,6 +1055,171 @@ function startClaudeJob(message, companyId) {
     job.error = error instanceof Error ? error.message : String(error);
     job.completedAt = Date.now();
     job.durationMs = job.completedAt - job.startedAt;
+  });
+
+  return job;
+}
+
+function companyCreationStepList(companyName) {
+  return [
+    { id: "profile", title: "建立公司档案", detail: `正在为${companyName}创建独立经营工程。`, status: "pending" },
+    { id: "research", title: "研究主营业务", detail: "正在整理客户、资料、成交路径和风险点。", status: "pending" },
+    { id: "departments", title: "组建AI部门", detail: "正在安排总经理、销售、资料、财务等角色。", status: "pending" },
+    { id: "tasks", title: "生成经营任务", detail: "正在生成老板今天要看的事项、资料和待办。", status: "pending" },
+    { id: "finalize", title: "完成经营看板", detail: "正在保存公司工程并切换到新看板。", status: "pending" },
+  ];
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function cleanupCompanyCreationJobs() {
+  const cutoff = Date.now() - COMPANY_CREATION_JOB_TTL_MS;
+  for (const [jobId, job] of companyCreationJobs.entries()) {
+    if ((job.completedAt || job.startedAt) < cutoff) companyCreationJobs.delete(jobId);
+  }
+}
+
+function updateCompanyCreationStep(job, stepId, status, detail) {
+  let seen = false;
+  job.steps = job.steps.map((step) => {
+    if (step.id === stepId) {
+      seen = true;
+      return { ...step, status, detail: detail || step.detail };
+    }
+    if (!seen && step.status === "running") return { ...step, status: "done" };
+    return step;
+  });
+  job.activeStep = stepId;
+  job.updatedAt = Date.now();
+}
+
+function serializeCompanyCreationJob(job) {
+  return {
+    ok: true,
+    jobId: job.id,
+    status: job.status,
+    activeStep: job.activeStep,
+    steps: job.steps,
+    redirectTo: job.redirectTo,
+    dashboard: job.dashboard || null,
+    error: job.error || "",
+    durationMs: (job.completedAt || Date.now()) - job.startedAt,
+  };
+}
+
+async function runCompanyResearchAgent(workspace) {
+  if (!claudeVersion()) return "";
+  const message = [
+    `请为新公司“${workspace.company.name}”做一份经营启动研究。`,
+    `主营业务：${workspace.company.industry}`,
+    `一句话介绍：${workspace.company.slogan || "待补充"}`,
+    "请输出：客户画像、优先部门、今天三件事、需要老板确认的风险。",
+    "不要提模型、命令行、供应商或实现细节。",
+  ].join("\n");
+  const result = await runClaude(message, workspace);
+  if (!result.ok) return "";
+  return result.output.slice(0, 1800);
+}
+
+function startCompanyCreationJob({ companyId, companyName, companySlug, sessionSnapshot }) {
+  cleanupCompanyCreationJobs();
+  const job = {
+    id: id("company_job"),
+    status: "running",
+    activeStep: "profile",
+    companyId,
+    steps: companyCreationStepList(companyName || "新公司"),
+    redirectTo: `/dashboard/${companySlug || "fitscope"}`,
+    dashboard: null,
+    error: "",
+    startedAt: Date.now(),
+    completedAt: 0,
+    updatedAt: Date.now(),
+  };
+  if (job.steps[0]) job.steps[0].status = "running";
+  companyCreationJobs.set(job.id, job);
+
+  (async () => {
+    const state = await loadState();
+    const workspace = workspaceForSession(state, { companyId });
+    const owner = ownerForSession(state, sessionSnapshot);
+    job.redirectTo = `/dashboard/${workspace.company.slug}`;
+
+    updateCompanyCreationStep(job, "profile", "running", `正在为${workspace.company.name}建立公司档案和独立工程目录。`);
+    workspace.meta = { ...(workspace.meta || {}), creationStatus: "building_profile", updatedAt: Date.now() };
+    pushActivity(workspace, `AI开始为${workspace.company.name}建立公司经营工程。`);
+    await materializeAgentWorkspace(workspace, owner);
+    await saveState(state);
+    await delay(700);
+
+    updateCompanyCreationStep(job, "profile", "done", "公司档案已建立。");
+    updateCompanyCreationStep(job, "research", "running", "正在让AI员工研究主营业务、客户画像和成交路径。");
+    workspace.meta.creationStatus = "researching";
+    let aiNotes = "";
+    try {
+      aiNotes = await runCompanyResearchAgent(workspace);
+    } catch {
+      aiNotes = "";
+    }
+    workspace.activity.unshift({
+      id: id("log"),
+      time: nowLabel(),
+      text: aiNotes ? "AI已完成新公司经营研究底稿。" : "AI已按主营业务生成第一版经营研究底稿。",
+    });
+    workspace.activity = workspace.activity.slice(0, 12);
+    await materializeAgentWorkspace(workspace, owner, { aiNotes });
+    await saveState(state);
+    await delay(700);
+
+    updateCompanyCreationStep(job, "research", "done", "经营研究底稿已生成。");
+    updateCompanyCreationStep(job, "departments", "running", "正在组建AI部门并分配总经理、销售、资料、财务职责。");
+    workspace.meta.creationStatus = "building_departments";
+    workspace.agents = workspace.agents.map((agent) => ({
+      ...agent,
+      status: agent.status.replace(/^正在/, "已经开始"),
+      progress: Math.min(88, Number(agent.progress || 60) + 8),
+    }));
+    await materializeAgentWorkspace(workspace, owner, { aiNotes });
+    await saveState(state);
+    await delay(700);
+
+    updateCompanyCreationStep(job, "departments", "done", "AI部门和职责已就绪。");
+    updateCompanyCreationStep(job, "tasks", "running", "正在生成今天要看的事项、资料草稿和经营队列。");
+    workspace.meta.creationStatus = "creating_tasks";
+    workspace.tasks = workspace.tasks.map((task, index) => ({
+      ...task,
+      status: index === 0 ? "待老板确认" : "AI已生成",
+      priority: index === 0 ? "今天" : task.priority,
+    }));
+    workspace.inbox = {
+      title: "新公司工程已创建",
+      body: `AI已经为${workspace.company.name}建立公司档案、研究底稿、AI部门、经营任务和今日简报。老板现在可以先看三件待确认事项。`,
+    };
+    await materializeAgentWorkspace(workspace, owner, { aiNotes });
+    await saveState(state);
+    await delay(700);
+
+    updateCompanyCreationStep(job, "tasks", "done", "经营任务和资料草稿已生成。");
+    updateCompanyCreationStep(job, "finalize", "running", "正在保存并进入新公司经营看板。");
+    workspace.meta.creationStatus = "ready";
+    workspace.company.mood = `AI员工已为${workspace.company.name}建好经营工程，今天先推进最关键的三件事。`;
+    pushActivity(workspace, `${workspace.company.name}的新公司经营工程已完成。`);
+    await materializeAgentWorkspace(workspace, owner, { aiNotes });
+    await saveState(state);
+    await delay(500);
+
+    updateCompanyCreationStep(job, "finalize", "done", "新公司经营看板已完成。");
+    job.status = "done";
+    job.completedAt = Date.now();
+    job.dashboard = publicDashboard(state, sessionSnapshot);
+  })().catch((error) => {
+    job.status = "error";
+    job.error = error instanceof Error ? error.message : String(error);
+    job.completedAt = Date.now();
+    const currentStep = job.steps.find((step) => step.id === job.activeStep);
+    if (currentStep) currentStep.status = "error";
   });
 
   return job;
@@ -1146,16 +1465,32 @@ async function handleApi(req, res) {
         industry: cleanText(body.industry, "请补充主营业务", 80),
         website: cleanText(body.website, "", 120),
         slogan: cleanText(body.slogan, "", 120),
+      }, {
+        creationStatus: "queued",
       });
-      pushActivity(workspace, `老板新建并进入公司：${companyName}。`);
+      pushActivity(workspace, `老板提交了新公司创建：${companyName}。`);
       state.companies.push(workspace);
       state.activeCompanyId = workspace.company.id;
       await updateSessionCompany(session, workspace.company.id);
+      await materializeAgentWorkspace(workspace, ownerForSession(state, session));
       await saveState(state);
-      sendJson(res, 200, {
+      const sessionSnapshot = {
+        ...session,
+        companyId: workspace.company.id,
+      };
+      const job = startCompanyCreationJob({
+        companyId: workspace.company.id,
+        companyName: workspace.company.name,
+        companySlug: workspace.company.slug,
+        sessionSnapshot,
+      });
+      sendJson(res, 202, {
         ok: true,
+        status: "running",
+        jobId: job.id,
+        steps: job.steps,
         redirectTo: `/dashboard/${workspace.company.slug}`,
-        dashboard: publicDashboard(state, { companyId: workspace.company.id }),
+        dashboard: publicDashboard(state, sessionSnapshot),
       });
       return;
     }
@@ -1170,6 +1505,18 @@ async function handleApi(req, res) {
     pushActivity(workspace, `老板更新了公司资料：${workspace.company.name}。`);
     await saveState(state);
     sendJson(res, 200, { ok: true, dashboard: publicDashboard(state, session) });
+    return;
+  }
+
+  const companyJobMatch = url.pathname.match(/^\/api\/company\/jobs\/([^/]+)$/);
+  if (companyJobMatch && req.method === "GET") {
+    cleanupCompanyCreationJobs();
+    const job = companyCreationJobs.get(decodeURIComponent(companyJobMatch[1]));
+    if (!job) {
+      sendJson(res, 404, { ok: false, error: "没有找到这个公司创建任务。" });
+      return;
+    }
+    sendJson(res, 200, serializeCompanyCreationJob(job));
     return;
   }
 

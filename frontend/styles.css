@@ -937,6 +937,104 @@ textarea::placeholder { color: oklch(0.58 0.02 72); }
   white-space: pre-wrap;
   padding: 11px;
 }
+.creation-process {
+  display: grid;
+  gap: 14px;
+  margin-top: 8px;
+}
+.creation-hero {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid rgba(55, 40, 24, 0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(222, 92, 38, 0.12), transparent 52%),
+    var(--surface-2);
+  padding: 16px;
+}
+.creation-hero span {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+.creation-hero strong {
+  font-family: var(--serif);
+  font-size: 36px;
+  line-height: 0.9;
+}
+.creation-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(55, 40, 24, 0.12);
+}
+.creation-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-dark), var(--accent));
+  transition: width 360ms ease;
+}
+.creation-steps {
+  display: grid;
+  gap: 8px;
+}
+.creation-step {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 253, 247, 0.76);
+  padding: 11px;
+}
+.creation-step b {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(55, 40, 24, 0.1);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.creation-step strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 15px;
+}
+.creation-step p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.creation-step.running {
+  border-color: rgba(222, 92, 38, 0.45);
+  background: rgba(255, 246, 232, 0.94);
+}
+.creation-step.running b {
+  color: white;
+  background: var(--accent-dark);
+  box-shadow: 0 0 0 5px rgba(222, 92, 38, 0.14);
+}
+.creation-step.done b {
+  color: white;
+  background: oklch(0.52 0.11 145);
+}
+.creation-step.error {
+  border-color: oklch(0.55 0.19 25);
+}
+.creation-error {
+  border: 1px solid oklch(0.72 0.14 28);
+  border-radius: 7px;
+  background: oklch(0.96 0.03 35);
+  color: oklch(0.42 0.14 28) !important;
+  padding: 10px;
+}
 .toast-region {
   position: fixed;
   right: 18px;

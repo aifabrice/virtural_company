@@ -161,6 +161,7 @@ let currentView = "today";
 let conversationMessages = [];
 let conversationCompanyId = "";
 let authMode = "login";
+let companyCreationBusy = false;
 const compactViewport = window.matchMedia("(max-width: 980px)");
 
 function escapeHtml(value) {
@@ -799,9 +800,55 @@ function openModal(key, detail) {
 }
 
 function closeModal() {
+  if (companyCreationBusy) {
+    toast("新公司还在创建中，请稍等一下");
+    return;
+  }
   els.modalBackdrop.hidden = true;
   els.modalBackdrop.dataset.current = "";
   modalCopyText = "";
+}
+
+function renderCompanyCreationProgress(job) {
+  const steps = job.steps?.length
+    ? job.steps
+    : [
+        { title: "建立公司档案", detail: "正在创建公司经营入口。", status: "running" },
+        { title: "研究主营业务", detail: "等待AI员工整理材料。", status: "pending" },
+        { title: "组建AI部门", detail: "等待分配职责。", status: "pending" },
+        { title: "生成经营任务", detail: "等待生成待办和资料。", status: "pending" },
+        { title: "完成经营看板", detail: "等待进入新公司。", status: "pending" },
+      ];
+  const doneCount = steps.filter((step) => step.status === "done").length;
+  const progress = Math.round((doneCount / Math.max(steps.length, 1)) * 100);
+  const statusText =
+    job.status === "done"
+      ? "新公司已经建好"
+      : job.status === "error"
+        ? "创建过程中遇到问题"
+        : "AI员工正在搭建新公司";
+  els.modalTitle.textContent = "正在创建公司";
+  els.modalBody.innerHTML = `<div class="creation-process">
+    <div class="creation-hero">
+      <span>${escapeHtml(statusText)}</span>
+      <strong>${job.status === "done" ? "100" : String(progress)}%</strong>
+    </div>
+    <div class="creation-bar" aria-hidden="true"><span style="width:${job.status === "done" ? 100 : progress}%"></span></div>
+    <div class="creation-steps">
+      ${steps
+        .map(
+          (step, index) => `<article class="creation-step ${escapeHtml(step.status || "pending")}">
+            <b>${index + 1}</b>
+            <div>
+              <strong>${escapeHtml(step.title || "")}</strong>
+              <p>${escapeHtml(step.detail || "")}</p>
+            </div>
+          </article>`,
+        )
+        .join("")}
+    </div>
+    ${job.error ? `<p class="creation-error">${escapeHtml(job.error)}</p>` : ""}
+  </div>`;
 }
 
 function setAIStatus(message, state = "") {
@@ -939,11 +986,37 @@ async function runCycle() {
   }
 }
 
+async function waitForCompanyCreation(jobId) {
+  if (!jobId) throw new Error("公司创建任务没有启动成功。");
+  for (let attempt = 0; attempt < 180; attempt += 1) {
+    await delay(attempt === 0 ? 500 : 1200);
+    const data = await fetchJson(`/api/company/jobs/${encodeURIComponent(jobId)}`);
+    renderCompanyCreationProgress(data);
+    if (data.status === "done") return data;
+    if (data.status === "error") throw new Error(data.error || "新公司创建失败。");
+  }
+  throw new Error("新公司创建时间太久，请稍后刷新再看。");
+}
+
 async function saveCompany(form) {
   const values = Object.fromEntries(new FormData(form).entries());
   const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
   try {
+    const isNewCompany = form.dataset.mode === "new";
+    if (isNewCompany) {
+      companyCreationBusy = true;
+      renderCompanyCreationProgress({
+        status: "running",
+        steps: [
+          { title: "建立公司档案", detail: "正在提交公司基础资料。", status: "running" },
+          { title: "研究主营业务", detail: "等待AI员工整理材料。", status: "pending" },
+          { title: "组建AI部门", detail: "等待分配职责。", status: "pending" },
+          { title: "生成经营任务", detail: "等待生成待办和资料。", status: "pending" },
+          { title: "完成经营看板", detail: "等待进入新公司。", status: "pending" },
+        ],
+      });
+    }
     const data = await fetchJson("/api/company", {
       method: "PATCH",
       body: JSON.stringify({
@@ -954,13 +1027,22 @@ async function saveCompany(form) {
         slogan: values.slogan,
       }),
     });
-    renderDashboard(data.dashboard);
-    history.replaceState(null, "", data.redirectTo || (data.dashboard?.company?.slug ? `/dashboard/${data.dashboard.company.slug}` : "/dashboard/fitscope"));
+    let finalData = data;
+    if (isNewCompany && data.jobId) {
+      renderCompanyCreationProgress(data);
+      finalData = await waitForCompanyCreation(data.jobId);
+      await delay(650);
+    }
+    renderDashboard(finalData.dashboard || data.dashboard);
+    history.replaceState(null, "", finalData.redirectTo || data.redirectTo || (finalData.dashboard?.company?.slug ? `/dashboard/${finalData.dashboard.company.slug}` : "/dashboard/fitscope"));
     setDashboardView("today");
+    companyCreationBusy = false;
     closeModal();
-    toast(form.dataset.mode === "new" ? "新公司已建好" : "公司资料已保存");
-    pushLog(form.dataset.mode === "new" ? "> 已新建公司看板" : "> 已更新公司资料");
+    toast(isNewCompany ? "新公司工程已建好" : "公司资料已保存");
+    pushLog(isNewCompany ? "> AI已完成新公司经营工程" : "> 已更新公司资料");
+    if (isNewCompany) addConversationMessage("agent", `${finalData.dashboard?.company?.name || "新公司"}已经建好。我已经整理了公司档案、AI部门、今日任务和资料草稿，老板可以先看“今天”里的三件事。`);
   } catch (error) {
+    companyCreationBusy = false;
     toast(error.message || "保存失败");
   } finally {
     button.disabled = false;
