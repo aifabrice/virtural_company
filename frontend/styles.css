@@ -643,11 +643,63 @@ h2 {
   font-family: var(--mono);
   font-size: 11px;
 }
-.message p {
+.message-body {
   white-space: pre-wrap;
   color: inherit;
   font-size: 15px;
   line-height: 1.65;
+}
+.message-body p,
+.message-body ul,
+.message-body ol,
+.message-body blockquote,
+.message-body pre {
+  margin: 0;
+}
+.message-body > * + * {
+  margin-top: 8px;
+}
+.message-body .message-heading {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 900;
+}
+.message.user .message-body .message-heading {
+  color: white;
+}
+.message-body ul,
+.message-body ol {
+  padding-left: 20px;
+}
+.message-body li + li {
+  margin-top: 5px;
+}
+.message-body strong {
+  font-weight: 900;
+}
+.message-body blockquote {
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+  padding-left: 10px;
+}
+.message-body code {
+  border-radius: 4px;
+  background: rgba(31, 25, 16, 0.08);
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 1px 4px;
+}
+.message-body pre {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 253, 247, 0.68);
+  padding: 9px;
+}
+.message-body pre code {
+  display: block;
+  background: transparent;
+  padding: 0;
 }
 .chat-spacer { display: none; }
 .composer {

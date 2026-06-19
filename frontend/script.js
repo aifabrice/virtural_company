@@ -167,6 +167,95 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function renderInlineMarkdown(value) {
+  return escapeHtml(value)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+    .replace(/\*\*/g, "")
+    .replace(/__/g, "");
+}
+
+function renderMessageText(value) {
+  const lines = String(value || "").replace(/\r\n/g, "\n").split("\n");
+  const html = [];
+  let listType = "";
+  let inCodeBlock = false;
+  let codeLines = [];
+
+  function closeList() {
+    if (!listType) return;
+    html.push(`</${listType}>`);
+    listType = "";
+  }
+
+  function openList(type) {
+    if (listType === type) return;
+    closeList();
+    listType = type;
+    html.push(`<${type}>`);
+  }
+
+  function flushCode() {
+    closeList();
+    html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+    codeLines = [];
+    inCodeBlock = false;
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+
+    if (/^```/.test(line)) {
+      if (inCodeBlock) flushCode();
+      else {
+        closeList();
+        inCodeBlock = true;
+        codeLines = [];
+      }
+      continue;
+    }
+    if (inCodeBlock) {
+      codeLines.push(rawLine);
+      continue;
+    }
+    if (!line) {
+      closeList();
+      continue;
+    }
+
+    const heading = line.match(/^#{1,4}\s*(\S.+)$/);
+    const boldHeading = line.match(/^\*\*(.+)\*\*$/) || line.match(/^__(.+)__$/);
+    const bullet = line.match(/^[-*•]\s+(.+)$/);
+    const numbered = line.match(/^\d+[.、)]\s+(.+)$/);
+    const quote = line.match(/^>\s+(.+)$/);
+
+    if (heading) {
+      closeList();
+      html.push(`<p class="message-heading">${renderInlineMarkdown(heading[1])}</p>`);
+    } else if (boldHeading) {
+      closeList();
+      html.push(`<p class="message-heading">${renderInlineMarkdown(boldHeading[1])}</p>`);
+    } else if (bullet) {
+      openList("ul");
+      html.push(`<li>${renderInlineMarkdown(bullet[1])}</li>`);
+    } else if (numbered) {
+      openList("ol");
+      html.push(`<li>${renderInlineMarkdown(numbered[1])}</li>`);
+    } else if (quote) {
+      closeList();
+      html.push(`<blockquote>${renderInlineMarkdown(quote[1])}</blockquote>`);
+    } else {
+      closeList();
+      html.push(`<p>${renderInlineMarkdown(line)}</p>`);
+    }
+  }
+
+  closeList();
+  if (inCodeBlock && codeLines.length) flushCode();
+  return html.join("");
+}
+
 function fetchJson(path, options = {}) {
   return fetch(`${API_BASE}${path}`, {
     ...options,
@@ -227,7 +316,7 @@ function renderConversation() {
           <span>${escapeHtml(item.role === "user" ? "老板" : "AI经营助手")}</span>
           <span>${escapeHtml(item.time || "")}</span>
         </div>
-        <p>${escapeHtml(item.text)}</p>
+        <div class="message-body">${renderMessageText(item.text)}</div>
       </article>`,
     )
     .join("");
