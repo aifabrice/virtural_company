@@ -1,0 +1,14 @@
+[Unit]
+Description=Virtual Company Serveo public tunnel
+After=network-online.target virtual-company.service
+Wants=network-online.target
+Requires=virtual-company.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=60 -o ExitOnForwardFailure=yes -R 80:127.0.0.1:5176 serveo.net
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

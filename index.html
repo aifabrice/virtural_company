@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>企小帮 - 中文AI公司经营系统</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="terminal" aria-label="AI工作记录">
+      <div id="terminalLines"></div>
+    </div>
+
+    <section class="login-view" id="loginView" aria-label="老板入口">
+      <nav class="login-nav">
+        <a class="brand lockup" href="/">企小帮</a>
+        <button class="bevel" id="demoLoginTop" type="button">进入演示公司</button>
+      </nav>
+      <main class="login-main">
+        <div class="login-copy">
+          <p class="eyebrow">Login portal.</p>
+          <h1>让AI员工每天替公司推进经营任务</h1>
+          <p>
+            像 Polsia 的 autonomous company dashboard 一样：老板只看结果和确认事项，客户、文案、官网、收款和经营简报由AI先跑起来。
+          </p>
+        </div>
+        <form class="login-card" id="loginForm">
+          <h2>老板入口</h2>
+          <label for="ownerName">怎么称呼您</label>
+          <input id="ownerName" name="ownerName" value="张老板" autocomplete="name" />
+          <label for="ownerPhone">手机或邮箱</label>
+          <input id="ownerPhone" name="ownerPhone" placeholder="可不填，先进入演示" autocomplete="email" />
+          <button class="god-mode" type="submit">进入顺达机械看板</button>
+          <p class="meta">本地演示版不会发送短信、邮件或产生扣费。</p>
+        </form>
+      </main>
+    </section>
+
+    <section class="product-view hidden" id="productView" aria-label="企小帮经营系统" hidden>
+      <header class="topbar">
+        <a class="brand" href="/dashboard/fitscope" aria-label="顺达机械经营看板">
+          <span>顺达机械</span>
+          <small id="companySlug">/dashboard/fitscope</small>
+        </a>
+        <div class="top-actions">
+          <button class="bevel" id="healthButton" type="button">系统自检</button>
+          <button class="bevel" data-modal="credits" type="button">充值</button>
+          <button class="bevel" data-modal="newCompany" type="button">新建公司</button>
+          <button class="bevel" id="menuButton" type="button" aria-haspopup="true" aria-expanded="false">菜单</button>
+        </div>
+        <div class="menu-popover" id="menuPopover" role="dialog" aria-label="账户菜单">
+          <button type="button" data-modal="companies">我的公司</button>
+          <button type="button" data-modal="newCompany">新建公司</button>
+          <hr />
+          <button type="button" data-modal="upgrade">升级套餐</button>
+          <button type="button" data-modal="companySettings">公司设置</button>
+          <button type="button" data-modal="profileSettings">老板资料</button>
+          <hr />
+          <button type="button" data-modal="about">这是干什么的</button>
+          <button type="button" data-modal="doctrine">使用原则</button>
+          <button type="button" data-modal="faq">常见问题</button>
+          <hr />
+          <button type="button" id="logoutButton">退出到入口</button>
+        </div>
+      </header>
+
+      <div class="app-shell chat-open" id="appShell">
+        <nav class="side-nav" aria-label="公司功能">
+          <a class="active" href="#today">今天</a>
+          <a href="#agents">AI员工</a>
+          <a href="#tasks">待确认</a>
+          <a href="#channels">获客</a>
+          <a href="#records">记录</a>
+          <a href="#settings">设置</a>
+        </nav>
+
+        <main class="dashboard" id="dashboard" aria-label="公司经营看板">
+          <section class="hero-panel" id="today">
+            <div>
+              <p class="eyebrow">Autonomous company dashboard</p>
+              <h1 id="companyName">顺达机械</h1>
+              <p id="companyMood">AI员工正在替公司推进今天的经营任务</p>
+            </div>
+            <button class="god-mode" id="runCycleButton" type="button">让AI继续干活</button>
+          </section>
+
+          <section class="metric-grid" id="metricGrid" aria-label="关键数字"></section>
+
+          <section class="panel focus-panel">
+            <div class="section-head">
+              <h2>老板今天只看这三件事</h2>
+              <span class="meta" id="updatedAt">正在更新</span>
+            </div>
+            <ol class="focus-list" id="focusList"></ol>
+          </section>
+
+          <section class="panel" id="agents">
+            <div class="section-head">
+              <h2>AI员工正在做什么</h2>
+              <button class="text-button" id="refreshDashboard" type="button">刷新</button>
+            </div>
+            <div class="agent-list" id="agentList"></div>
+          </section>
+
+          <section class="panel" id="tasks">
+            <div class="section-head">
+              <h2>等老板确认</h2>
+              <button class="text-button" data-modal="manageTasks" type="button">查看全部</button>
+            </div>
+            <div class="task-list" id="taskList"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <h2>资料和报告</h2>
+              <span class="meta">可直接给员工看</span>
+            </div>
+            <div class="doc-list" id="docList"></div>
+          </section>
+
+          <section class="panel" id="channels">
+            <div class="section-head">
+              <h2>对外获客和收款</h2>
+              <span class="meta">先草稿，后确认</span>
+            </div>
+            <div class="channel-list" id="channelList"></div>
+            <article class="soft-card compact" id="socialDraft"></article>
+          </section>
+
+          <section class="panel" id="records">
+            <div class="section-head">
+              <h2>AI执行记录</h2>
+              <span class="meta">最近动作</span>
+            </div>
+            <div class="activity-list" id="activityList"></div>
+          </section>
+
+          <section class="panel" id="settings">
+            <div class="section-head">
+              <h2>老板收件箱</h2>
+              <span class="meta">需要您看的结果</span>
+            </div>
+            <article class="soft-card compact" id="inboxCard"></article>
+          </section>
+        </main>
+
+        <aside class="chat-panel" id="chatPanel" aria-label="老板指令输入区">
+          <div class="surprise-chip">
+            <button id="surpriseButton" type="button">帮我想办法</button>
+            <button class="close-chat" id="closeChat" type="button" aria-label="收起助手">×</button>
+          </div>
+          <div class="quick-actions" aria-label="常用指令">
+            <button type="button" data-quick="帮我找10个附近可能需要设备维护的客户">找10个客户</button>
+            <button type="button" data-quick="帮我写一条发给老客户的回访消息">写回访消息</button>
+            <button type="button" data-quick="帮我做一份设备巡检服务报价">做服务报价</button>
+            <button type="button" data-quick="帮我把今天员工要做的事列出来">安排员工</button>
+          </div>
+          <div class="claude-bridge" aria-live="polite">
+            <div class="bridge-status" id="claudeStatus">Claude Code：正在检查连接</div>
+            <div class="bridge-result" id="claudeResult">点击快捷按钮或输入指令后，Claude Code 会把结果返回到这里。</div>
+            <a class="bridge-link" id="bridgeLink" href="http://localhost:5176/dashboard/fitscope">打开连接版页面</a>
+          </div>
+          <div class="chat-spacer"></div>
+          <form class="composer" id="composer">
+            <label class="attach" for="imageInput" aria-label="上传图片">+</label>
+            <input id="imageInput" type="file" accept="image/*" hidden />
+            <textarea id="chatInput" rows="1" placeholder="直接说：帮我做什么"></textarea>
+            <button class="bevel" id="sendButton" type="submit" disabled>发送</button>
+          </form>
+        </aside>
+
+        <button class="open-inbox" id="openInbox" type="button" aria-label="打开助手"></button>
+      </div>
+    </section>
+
+    <div class="modal-backdrop" id="modalBackdrop" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <button class="modal-close" id="modalClose" type="button" aria-label="关闭弹窗">×</button>
+        <h2 id="modalTitle">提示</h2>
+        <div id="modalBody"></div>
+      </div>
+    </div>
+
+    <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+
+    <script src="script.js"></script>
+  </body>
+</html>

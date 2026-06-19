@@ -1,0 +1,17 @@
+.DS_Store
+
+node_modules/
+output/
+.data/
+.playwright-cli/
+.reference/
+
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

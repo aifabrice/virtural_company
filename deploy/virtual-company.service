@@ -1,0 +1,17 @@
+[Unit]
+Description=Virtual Company dashboard
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/virtual_company
+ExecStart=/usr/bin/node /opt/virtual_company/server.js
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+Environment=PORT=5176
+Environment=CLAUDE_BIN=/usr/local/bin/claude
+EnvironmentFile=-/etc/virtual-company/claude.env
+
+[Install]
+WantedBy=multi-user.target
