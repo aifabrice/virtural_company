@@ -282,6 +282,7 @@ function delay(ms) {
 }
 
 function renderTerminal() {
+  if (!els.terminalLines) return;
   els.terminalLines.innerHTML = terminalLines
     .slice(-9)
     .map((line) => `<div class="terminal-line">${escapeHtml(line)}</div>`)

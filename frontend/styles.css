@@ -44,19 +44,6 @@ p { margin: 0; text-wrap: pretty; }
 h1, h2 { margin: 0; line-height: 1.12; text-wrap: balance; letter-spacing: 0; }
 .hidden { display: none !important; }
 
-.terminal {
-  height: 48px;
-  overflow: hidden;
-  border-bottom: 1px solid rgba(55, 40, 24, 0.14);
-  background: #17130d;
-  color: #fff7e8;
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 17px;
-  padding: 7px 16px;
-}
-.terminal-line { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: 0.92; }
-
 .brand {
   display: inline-flex;
   flex-direction: column;
@@ -903,7 +890,6 @@ textarea::placeholder { color: oklch(0.58 0.02 72); }
 }
 @media (max-width: 980px) {
   :root { --chat-width: 100vw; --side-width: 100%; }
-  .terminal { height: 38px; padding: 5px 12px; }
   .login-main { grid-template-columns: 1fr; padding: 42px 0; }
   .login-copy h1 { font-size: 42px; }
   .topbar { flex-wrap: wrap; gap: 12px; }
