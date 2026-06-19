@@ -652,10 +652,168 @@ function operatingBacklog(workspace) {
   }));
 }
 
+function extractJsonObject(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenced?.[1] || raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1);
+  if (!candidate || !candidate.startsWith("{")) return null;
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    return null;
+  }
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value.filter(Boolean) : [];
+}
+
+function defaultResearchPack(workspace, aiNotes = "") {
+  const company = workspace.company;
+  const kind = businessKind(company);
+  const researchThemes =
+    kind === "investment"
+      ? ["项目来源", "投资方向", "尽调标准", "资金安排", "对外合作介绍"]
+      : kind === "trade"
+        ? ["采购客户", "货源稳定性", "报价体系", "交付周期", "回款风险"]
+        : kind === "retail"
+          ? ["门店客流", "复购产品", "员工排班", "会员转化", "收款与库存"]
+          : ["客户画像", "获客渠道", "对外资料", "交付流程", "收款准备"];
+  const competitors =
+    kind === "investment"
+      ? ["本地财务顾问机构", "产业基金平台", "券商投行团队"]
+      : kind === "trade"
+        ? ["同城批发商", "区域代理商", "线上供应链平台"]
+        : kind === "industrial"
+          ? ["本地维修服务商", "设备原厂售后", "备件经销商"]
+          : ["同城同行商家", "线上平台服务商", "老客户转介绍团队"];
+  const customerSegments =
+    kind === "investment"
+      ? [
+          ["项目方", "需要融资、并购或产业资源的企业", "先确认阶段、金额、资料完整度"],
+          ["资金方", "有明确行业偏好或配置需求的机构", "先说明项目质量和风险边界"],
+          ["中介渠道", "FA、律所、会计师、园区服务机构", "先建立稳定项目来源机制"],
+        ]
+      : kind === "trade"
+        ? [
+            ["稳定采购客户", "有持续采购和补货需求", "先给清楚报价、交期和售后"],
+            ["渠道商", "能带来批量订单或区域分销", "先确认价格体系和账期"],
+            ["老客户", "曾经成交或询价过", "先回访近期采购计划"],
+          ]
+        : [
+            ["老客户", "已经信任公司但缺少持续跟进", "先做回访和复购提醒"],
+            ["本地潜在客户", "有需求但还不了解公司", "先给简单可信的一页介绍"],
+            ["合作渠道", "能转介绍客户的同行或服务商", "先建立合作话术和分成规则"],
+          ];
+  const managerDecisions = [
+    "老板是否确认主推业务和客户优先级",
+    "是否允许AI继续补充外部资料和客户名单",
+    "是否确认对外介绍和第一版销售话术",
+    "是否需要设置收款方式、报价口径或预算上限",
+  ];
+  return {
+    generatedBy: aiNotes ? "ai_agent_with_research_prompt" : "internal_manager_framework",
+    rawNotes: aiNotes,
+    sources: aiNotes
+      ? [{ title: "AI经营研究输出", url: "", type: "agent_notes", summary: "AI已返回经营启动研究，具体来源以输出内容为准。" }]
+      : [{ title: "AI初步研究框架", url: "", type: "internal_framework", summary: "尚未取得可核验外部来源，已先按行业经营框架生成第一版。" }],
+    marketInsights: researchThemes.map((theme, index) => ({
+      theme,
+      insight: `${company.name}需要先把“${theme}”拆成可执行清单，避免老板只看到概念、看不到下一步动作。`,
+      action: index === 0 ? "今天先确认优先级" : "本周内补充资料并形成清单",
+    })),
+    competitors: competitors.map((name, index) => ({
+      name,
+      pressure: index === 0 ? "本地关系和响应速度" : index === 1 ? "资源覆盖和价格体系" : "线上获客和标准化服务",
+      counterMove: "用更清楚的客户画像、报价口径和跟进节奏提高成交确定性。",
+    })),
+    customerSegments: customerSegments.map(([name, profile, firstMove]) => ({ name, profile, firstMove })),
+    operatingPlan90d: [
+      { phase: "第1-7天", goal: "建档和验证方向", actions: ["确认主营业务", "整理客户画像", "生成对外介绍", "列出第一批可跟进名单"] },
+      { phase: "第8-30天", goal: "跑通获客和成交动作", actions: ["每天跟进客户", "每周复盘报价/话术", "沉淀成交案例", "建立收款和交付清单"] },
+      { phase: "第31-90天", goal: "形成稳定经营节奏", actions: ["固定周报", "扩展渠道", "优化部门职责", "把高频工作自动化"] },
+    ],
+    salesPlaybook: {
+      opening: `先用一句话说清${company.name}能帮客户解决什么问题。`,
+      qualification: ["客户是谁", "现在最急的问题是什么", "预算或合作周期是否明确", "谁能拍板"],
+      followUp: ["当天记录客户情况", "24小时内发送资料", "3天内二次跟进", "一周内给老板复盘结果"],
+    },
+    managerDecisions,
+  };
+}
+
+function researchPack(workspace, aiNotes = "") {
+  const parsed = extractJsonObject(aiNotes);
+  const fallback = defaultResearchPack(workspace, aiNotes);
+  if (!parsed) return fallback;
+  return {
+    ...fallback,
+    generatedBy: "ai_agent_web_research",
+    rawNotes: aiNotes,
+    sources: asArray(parsed.sources).length ? parsed.sources : fallback.sources,
+    marketInsights: asArray(parsed.marketInsights).length ? parsed.marketInsights : fallback.marketInsights,
+    competitors: asArray(parsed.competitors).length ? parsed.competitors : fallback.competitors,
+    customerSegments: asArray(parsed.customerSegments).length ? parsed.customerSegments : fallback.customerSegments,
+    operatingPlan90d: asArray(parsed.operatingPlan90d).length ? parsed.operatingPlan90d : fallback.operatingPlan90d,
+    salesPlaybook: parsed.salesPlaybook || fallback.salesPlaybook,
+    managerDecisions: asArray(parsed.managerDecisions).length ? parsed.managerDecisions : fallback.managerDecisions,
+  };
+}
+
+function marketResearchMarkdown(workspace, pack) {
+  return [
+    `# ${workspace.company.name}市场与经营研究`,
+    "",
+    `主营业务：${workspace.company.industry}`,
+    `研究方式：${pack.generatedBy}`,
+    "",
+    "## 关键判断",
+    ...pack.marketInsights.map((item, index) => `${index + 1}. ${item.theme || item.title || "经营重点"}：${item.insight || item.summary || ""}\n   - 下一步：${item.action || item.nextStep || "形成可执行清单"}`),
+    "",
+    "## 资料来源",
+    ...pack.sources.map((item, index) => `${index + 1}. ${item.title || "来源"}${item.url ? ` - ${item.url}` : ""}\n   - ${item.summary || item.type || "待核验"}`),
+    "",
+    pack.rawNotes ? `## AI研究原文\n${pack.rawNotes}` : "",
+    "",
+  ].join("\n");
+}
+
+function operatingPlanMarkdown(workspace, pack) {
+  return [
+    `# ${workspace.company.name}90天经营计划`,
+    "",
+    ...pack.operatingPlan90d.map((phase) => [
+      `## ${phase.phase || phase.name || "阶段"}`,
+      `目标：${phase.goal || ""}`,
+      "",
+      ...(asArray(phase.actions).map((action, index) => `${index + 1}. ${action}`)),
+      "",
+    ].join("\n")),
+  ].join("\n");
+}
+
+function salesPlaybookMarkdown(workspace, pack) {
+  const playbook = pack.salesPlaybook || {};
+  return [
+    `# ${workspace.company.name}销售打法`,
+    "",
+    `开场方式：${playbook.opening || `先介绍${workspace.company.name}能解决的具体问题。`}`,
+    "",
+    "## 先问清楚",
+    ...asArray(playbook.qualification).map((item, index) => `${index + 1}. ${item}`),
+    "",
+    "## 跟进节奏",
+    ...asArray(playbook.followUp).map((item, index) => `${index + 1}. ${item}`),
+    "",
+  ].join("\n");
+}
+
 async function materializeAgentWorkspace(workspace, owner, options = {}) {
   const root = agentWorkspaceRoot(workspace.company.id);
   const departments = departmentBlueprints(workspace);
   const backlog = operatingBacklog(workspace);
+  const pack = options.researchPack || researchPack(workspace, options.aiNotes || "");
   const generatedAt = new Date().toISOString();
   await fsp.mkdir(root, { recursive: true });
   await writeAgentWorkspaceFile(
@@ -673,8 +831,15 @@ async function materializeAgentWorkspace(workspace, owner, options = {}) {
     }),
   );
   await writeAgentWorkspaceFile(root, "research/industry_brief.md", researchBrief(workspace, options.aiNotes || ""));
+  await writeAgentWorkspaceFile(root, "sources.json", jsonBlock({ version: 1, generatedAt, sources: pack.sources }));
+  await writeAgentWorkspaceFile(root, "research/market_research.md", marketResearchMarkdown(workspace, pack));
+  await writeAgentWorkspaceFile(root, "research/competitors.json", jsonBlock({ version: 1, generatedAt, competitors: pack.competitors }));
+  await writeAgentWorkspaceFile(root, "research/customer_segments.json", jsonBlock({ version: 1, generatedAt, customerSegments: pack.customerSegments }));
   await writeAgentWorkspaceFile(root, "departments/departments.json", jsonBlock({ version: 1, generatedAt, departments }));
   await writeAgentWorkspaceFile(root, "tasks/operating_backlog.json", jsonBlock({ version: 1, generatedAt, tasks: backlog }));
+  await writeAgentWorkspaceFile(root, "plans/operating_plan_90d.md", operatingPlanMarkdown(workspace, pack));
+  await writeAgentWorkspaceFile(root, "playbooks/sales_playbook.md", salesPlaybookMarkdown(workspace, pack));
+  await writeAgentWorkspaceFile(root, "decisions/manager_decisions.json", jsonBlock({ version: 1, generatedAt, decisions: pack.managerDecisions }));
   await writeAgentWorkspaceFile(
     root,
     "documents/today_brief.md",
@@ -701,9 +866,16 @@ async function materializeAgentWorkspace(workspace, owner, options = {}) {
       "界面不直接暴露这里的路径，老板只在看板上看到结果和确认事项。",
       "",
       "- `company_profile.json`：公司基础档案",
+      "- `sources.json`：外部资料和研究来源存证",
       "- `research/industry_brief.md`：经营研究底稿",
+      "- `research/market_research.md`：市场与经营研究",
+      "- `research/competitors.json`：竞品和替代方案",
+      "- `research/customer_segments.json`：客户画像",
       "- `departments/departments.json`：AI部门和职责",
       "- `tasks/operating_backlog.json`：经营任务队列",
+      "- `plans/operating_plan_90d.md`：90天经营计划",
+      "- `playbooks/sales_playbook.md`：销售打法",
+      "- `decisions/manager_decisions.json`：需要老板拍板的事项",
       "- `documents/today_brief.md`：今日简报草稿",
       "",
     ].join("\n"),
@@ -711,7 +883,8 @@ async function materializeAgentWorkspace(workspace, owner, options = {}) {
   workspace.meta = {
     ...(workspace.meta || {}),
     agentWorkspaceId: workspace.company.id,
-    agentWorkspaceVersion: 1,
+    agentWorkspaceVersion: 2,
+    researchMode: pack.generatedBy,
     updatedAt: Date.now(),
   };
   return root;
@@ -986,6 +1159,70 @@ function runClaude(message, state) {
   });
 }
 
+function runAgentPrompt(prompt, cwd = PROJECT_ROOT) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const args = [
+      "-p",
+      prompt,
+      "--model",
+      process.env.ANTHROPIC_MODEL || "MiniMax-M3",
+      "--output-format",
+      "text",
+    ];
+
+    let stdout = "";
+    let stderr = "";
+    let finished = false;
+    const child = spawn(CLAUDE_BIN, args, {
+      cwd,
+      env: claudeEnv(),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const timer = setTimeout(() => {
+      if (!finished) child.kill("SIGTERM");
+    }, CLAUDE_TIMEOUT_MS);
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString("utf8");
+      if (stdout.length > 120000) stdout = stdout.slice(-120000);
+    });
+
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString("utf8");
+      if (stderr.length > 30000) stderr = stderr.slice(-30000);
+    });
+
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      finished = true;
+      resolve({
+        ok: false,
+        error: `无法启动AI员工：${error.message}`,
+        stdout,
+        stderr,
+        durationMs: Date.now() - started,
+      });
+    });
+
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      finished = true;
+      const timedOut = signal === "SIGTERM";
+      const ok = code === 0 && !timedOut;
+      resolve({
+        ok,
+        code,
+        signal,
+        error: ok ? "" : timedOut ? "AI员工处理超时，请把指令说得更短一点。" : friendlyClaudeError(stderr),
+        output: stdout.trim(),
+        durationMs: Date.now() - started,
+      });
+    });
+  });
+}
+
 const claudeJobs = new Map();
 const CLAUDE_JOB_TTL_MS = 10 * 60 * 1000;
 const companyCreationJobs = new Map();
@@ -1063,9 +1300,11 @@ function startClaudeJob(message, companyId) {
 function companyCreationStepList(companyName) {
   return [
     { id: "profile", title: "建立公司档案", detail: `正在为${companyName}创建独立经营工程。`, status: "pending" },
-    { id: "research", title: "研究主营业务", detail: "正在整理客户、资料、成交路径和风险点。", status: "pending" },
-    { id: "departments", title: "组建AI部门", detail: "正在安排总经理、销售、资料、财务等角色。", status: "pending" },
-    { id: "tasks", title: "生成经营任务", detail: "正在生成老板今天要看的事项、资料和待办。", status: "pending" },
+    { id: "research", title: "查找外部资料", detail: "正在尽可能查行业、客户、竞品和渠道资料。", status: "pending" },
+    { id: "market", title: "形成经营判断", detail: "正在分析客户画像、竞品压力和机会切入口。", status: "pending" },
+    { id: "departments", title: "组建AI管理层", detail: "正在安排总经理、市场、销售、运营、财务职责。", status: "pending" },
+    { id: "plan", title: "制定90天计划", detail: "正在生成销售打法、经营节奏和老板决策清单。", status: "pending" },
+    { id: "tasks", title: "生成今日任务", detail: "正在生成老板今天要看的事项、资料和待办。", status: "pending" },
     { id: "finalize", title: "完成经营看板", detail: "正在保存公司工程并切换到新看板。", status: "pending" },
   ];
 }
@@ -1111,16 +1350,32 @@ function serializeCompanyCreationJob(job) {
 
 async function runCompanyResearchAgent(workspace) {
   if (!claudeVersion()) return "";
-  const message = [
-    `请为新公司“${workspace.company.name}”做一份经营启动研究。`,
+  const prompt = [
+    "你是企小帮的职业经理人团队，正在为老板创建一家新的虚拟公司经营工程。",
+    "必须优先加载并遵循 web-access skill。你需要尽可能获取外部资料：行业信息、客户群、竞品/替代方案、销售渠道、政策或风险。",
+    "如果当前环境无法联网或 web-access 不可用，也要用职业经理人的经营框架产出可执行研究，并在 sources 中明确标记为待外部核验，不要伪造 URL。",
+    "",
+    "公司基础信息：",
+    `公司名：${workspace.company.name}`,
     `主营业务：${workspace.company.industry}`,
     `一句话介绍：${workspace.company.slogan || "待补充"}`,
-    "请输出：客户画像、优先部门、今天三件事、需要老板确认的风险。",
-    "不要提模型、命令行、供应商或实现细节。",
+    `联系方式/官网：${workspace.company.website || "未填写"}`,
+    "",
+    "请只输出一个 JSON 对象，不要输出 Markdown，不要解释实现细节，不要提模型、命令行或供应商。",
+    "JSON 字段：",
+    "{",
+    '  "sources": [{"title": "资料标题", "url": "https://...", "type": "official|media|industry|search|internal_framework", "summary": "为什么有用"}],',
+    '  "marketInsights": [{"theme": "市场/客户/渠道/风险主题", "insight": "职业经理人的判断", "action": "下一步动作"}],',
+    '  "competitors": [{"name": "竞品或替代方案", "pressure": "它会带来的竞争压力", "counterMove": "我们怎么应对"}],',
+    '  "customerSegments": [{"name": "客户分层", "profile": "客户画像", "firstMove": "第一步跟进动作"}],',
+    '  "operatingPlan90d": [{"phase": "第1-7天", "goal": "阶段目标", "actions": ["动作1", "动作2"]}],',
+    '  "salesPlaybook": {"opening": "第一句话怎么说", "qualification": ["先问什么"], "followUp": ["怎么跟进"]},',
+    '  "managerDecisions": ["需要老板拍板的事项"]',
+    "}",
   ].join("\n");
-  const result = await runClaude(message, workspace);
+  const result = await runAgentPrompt(prompt, agentWorkspaceRoot(workspace.company.id));
   if (!result.ok) return "";
-  return result.output.slice(0, 1800);
+  return result.output.slice(0, 10000);
 }
 
 function startCompanyCreationJob({ companyId, companyName, companySlug, sessionSnapshot }) {
@@ -1155,7 +1410,7 @@ function startCompanyCreationJob({ companyId, companyName, companySlug, sessionS
     await delay(700);
 
     updateCompanyCreationStep(job, "profile", "done", "公司档案已建立。");
-    updateCompanyCreationStep(job, "research", "running", "正在让AI员工研究主营业务、客户画像和成交路径。");
+    updateCompanyCreationStep(job, "research", "running", "正在让AI员工尽可能查找外部资料、客户群、竞品和渠道。");
     workspace.meta.creationStatus = "researching";
     let aiNotes = "";
     try {
@@ -1163,29 +1418,63 @@ function startCompanyCreationJob({ companyId, companyName, companySlug, sessionS
     } catch {
       aiNotes = "";
     }
+    const managerPack = researchPack(workspace, aiNotes);
     workspace.activity.unshift({
       id: id("log"),
       time: nowLabel(),
-      text: aiNotes ? "AI已完成新公司经营研究底稿。" : "AI已按主营业务生成第一版经营研究底稿。",
+      text: aiNotes ? "AI已完成外部资料调研和经营研究底稿。" : "AI已按职业经理人框架生成第一版经营研究底稿。",
     });
     workspace.activity = workspace.activity.slice(0, 12);
-    await materializeAgentWorkspace(workspace, owner, { aiNotes });
+    await materializeAgentWorkspace(workspace, owner, { aiNotes, researchPack: managerPack });
     await saveState(state);
     await delay(700);
 
-    updateCompanyCreationStep(job, "research", "done", "经营研究底稿已生成。");
-    updateCompanyCreationStep(job, "departments", "running", "正在组建AI部门并分配总经理、销售、资料、财务职责。");
+    updateCompanyCreationStep(job, "research", "done", "外部资料和经营研究底稿已生成。");
+    updateCompanyCreationStep(job, "market", "running", "正在分析客户画像、竞品压力、销售切入口和经营风险。");
+    workspace.meta.creationStatus = "analyzing_market";
+    workspace.inbox = {
+      title: "经营研究已完成",
+      body: `AI已经为${workspace.company.name}整理了资料来源、客户画像、竞品压力和第一版销售切入口。下一步会组建AI管理层。`,
+    };
+    await materializeAgentWorkspace(workspace, owner, { aiNotes, researchPack: managerPack });
+    await saveState(state);
+    await delay(700);
+
+    updateCompanyCreationStep(job, "market", "done", "市场判断和客户画像已整理。");
+    updateCompanyCreationStep(job, "departments", "running", "正在组建AI管理层并分配总经理、市场、销售、运营、财务职责。");
     workspace.meta.creationStatus = "building_departments";
     workspace.agents = workspace.agents.map((agent) => ({
       ...agent,
       status: agent.status.replace(/^正在/, "已经开始"),
       progress: Math.min(88, Number(agent.progress || 60) + 8),
     }));
-    await materializeAgentWorkspace(workspace, owner, { aiNotes });
+    await materializeAgentWorkspace(workspace, owner, { aiNotes, researchPack: managerPack });
     await saveState(state);
     await delay(700);
 
-    updateCompanyCreationStep(job, "departments", "done", "AI部门和职责已就绪。");
+    updateCompanyCreationStep(job, "departments", "done", "AI管理层和职责已就绪。");
+    updateCompanyCreationStep(job, "plan", "running", "正在制定90天经营计划、销售打法和老板决策清单。");
+    workspace.meta.creationStatus = "planning_90d";
+    workspace.documents = [
+      ...(workspace.documents || []),
+      {
+        id: `${workspace.company.id}_doc_plan_90d`,
+        title: "90天经营计划",
+        type: "经营计划",
+        age: "刚刚",
+      },
+      {
+        id: `${workspace.company.id}_doc_sales_playbook`,
+        title: "销售打法草稿",
+        type: "销售打法",
+        age: "刚刚",
+      },
+    ].filter((item, index, arr) => arr.findIndex((doc) => doc.id === item.id) === index);
+    await materializeAgentWorkspace(workspace, owner, { aiNotes, researchPack: managerPack });
+    await saveState(state);
+    await delay(700);
+
+    updateCompanyCreationStep(job, "plan", "done", "90天经营计划和销售打法已生成。");
     updateCompanyCreationStep(job, "tasks", "running", "正在生成今天要看的事项、资料草稿和经营队列。");
     workspace.meta.creationStatus = "creating_tasks";
     workspace.tasks = workspace.tasks.map((task, index) => ({
@@ -1194,19 +1483,19 @@ function startCompanyCreationJob({ companyId, companyName, companySlug, sessionS
       priority: index === 0 ? "今天" : task.priority,
     }));
     workspace.inbox = {
-      title: "新公司工程已创建",
-      body: `AI已经为${workspace.company.name}建立公司档案、研究底稿、AI部门、经营任务和今日简报。老板现在可以先看三件待确认事项。`,
+      title: "新公司经营工程已创建",
+      body: `AI已经为${workspace.company.name}建立公司档案、资料来源、市场研究、客户画像、AI管理层、90天计划、经营任务和今日简报。老板现在可以先看三件待确认事项。`,
     };
-    await materializeAgentWorkspace(workspace, owner, { aiNotes });
+    await materializeAgentWorkspace(workspace, owner, { aiNotes, researchPack: managerPack });
     await saveState(state);
     await delay(700);
 
     updateCompanyCreationStep(job, "tasks", "done", "经营任务和资料草稿已生成。");
     updateCompanyCreationStep(job, "finalize", "running", "正在保存并进入新公司经营看板。");
     workspace.meta.creationStatus = "ready";
-    workspace.company.mood = `AI员工已为${workspace.company.name}建好经营工程，今天先推进最关键的三件事。`;
+    workspace.company.mood = `AI管理层已为${workspace.company.name}建好经营工程，今天先推进最关键的三件事。`;
     pushActivity(workspace, `${workspace.company.name}的新公司经营工程已完成。`);
-    await materializeAgentWorkspace(workspace, owner, { aiNotes });
+    await materializeAgentWorkspace(workspace, owner, { aiNotes, researchPack: managerPack });
     await saveState(state);
     await delay(500);
 

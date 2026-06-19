@@ -678,6 +678,12 @@ function documentText(doc) {
   if (doc.id.includes("pay")) {
     return "收款开通清单\n1. 营业执照\n2. 法人或经办人信息\n3. 对公账户\n4. 微信/支付宝商户资料\n注意：正式开通前需要老板确认。";
   }
+  if (doc.id.includes("plan_90d")) {
+    return `${company.name}90天经营计划\n第1-7天：确认主营业务、客户画像、对外介绍和第一批跟进名单。\n第8-30天：跑通获客、报价、跟进、复盘和收款准备。\n第31-90天：形成周报、渠道、案例和固定经营节奏。\n老板先确认：主推业务、客户优先级、预算上限。`;
+  }
+  if (doc.id.includes("sales_playbook")) {
+    return `${company.name}销售打法草稿\n第一句话：我们先帮客户把最急的问题讲清楚，再给一个能落地的方案。\n先问清楚：客户是谁、现在卡在哪里、预算和周期、谁能拍板。\n跟进节奏：当天记录，24小时发资料，3天二次跟进，一周给老板复盘。`;
+  }
   const advice =
     kind === "investment"
       ? "先确认投资方向，再推进项目来源和对外介绍。"
@@ -814,9 +820,11 @@ function renderCompanyCreationProgress(job) {
     ? job.steps
     : [
         { title: "建立公司档案", detail: "正在创建公司经营入口。", status: "running" },
-        { title: "研究主营业务", detail: "等待AI员工整理材料。", status: "pending" },
-        { title: "组建AI部门", detail: "等待分配职责。", status: "pending" },
-        { title: "生成经营任务", detail: "等待生成待办和资料。", status: "pending" },
+        { title: "查找外部资料", detail: "等待AI员工查资料。", status: "pending" },
+        { title: "形成经营判断", detail: "等待整理客户画像和竞品。", status: "pending" },
+        { title: "组建AI管理层", detail: "等待分配职责。", status: "pending" },
+        { title: "制定90天计划", detail: "等待生成经营节奏。", status: "pending" },
+        { title: "生成今日任务", detail: "等待生成待办和资料。", status: "pending" },
         { title: "完成经营看板", detail: "等待进入新公司。", status: "pending" },
       ];
   const doneCount = steps.filter((step) => step.status === "done").length;
@@ -1010,9 +1018,11 @@ async function saveCompany(form) {
         status: "running",
         steps: [
           { title: "建立公司档案", detail: "正在提交公司基础资料。", status: "running" },
-          { title: "研究主营业务", detail: "等待AI员工整理材料。", status: "pending" },
-          { title: "组建AI部门", detail: "等待分配职责。", status: "pending" },
-          { title: "生成经营任务", detail: "等待生成待办和资料。", status: "pending" },
+          { title: "查找外部资料", detail: "等待AI员工查资料。", status: "pending" },
+          { title: "形成经营判断", detail: "等待整理客户画像和竞品。", status: "pending" },
+          { title: "组建AI管理层", detail: "等待分配职责。", status: "pending" },
+          { title: "制定90天计划", detail: "等待生成经营节奏。", status: "pending" },
+          { title: "生成今日任务", detail: "等待生成待办和资料。", status: "pending" },
           { title: "完成经营看板", detail: "等待进入新公司。", status: "pending" },
         ],
       });
