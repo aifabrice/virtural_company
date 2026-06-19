@@ -11,26 +11,54 @@
     <section class="login-view" id="loginView" aria-label="老板入口">
       <nav class="login-nav">
         <a class="brand lockup" href="/">企小帮</a>
-        <button class="bevel" id="demoLoginTop" type="button">登录公司</button>
+        <button class="bevel" id="demoLoginTop" type="button">登录经营台</button>
       </nav>
       <main class="login-main">
         <div class="login-copy">
-          <p class="eyebrow">老板经营入口</p>
-          <h1>让AI员工每天替公司推进经营任务</h1>
+          <p class="eyebrow">老板经营工作台</p>
+          <h1>今天公司要推进什么，一打开就看清楚</h1>
           <p>
-            老板只看结果和确认事项，客户、文案、官网、收款和经营简报由AI员工先跑起来。
+            客户线索、报价草稿、员工安排、收款提醒和经营简报先由AI员工整理好，老板只处理需要拍板的事项。
           </p>
+          <div class="login-proof" aria-label="今日经营概览">
+            <div class="proof-row">
+              <span>待老板确认</span>
+              <strong>3件</strong>
+              <small>报价、回访、收款</small>
+            </div>
+            <div class="proof-row">
+              <span>AI已完成</span>
+              <strong>7件</strong>
+              <small>客户、文案、简报</small>
+            </div>
+            <div class="proof-row">
+              <span>本周线索</span>
+              <strong>10家</strong>
+              <small>可继续筛选</small>
+            </div>
+          </div>
         </div>
-        <form class="login-card" id="loginForm">
-          <h2>老板入口</h2>
-          <label for="ownerName">怎么称呼您</label>
-          <input id="ownerName" name="ownerName" value="张老板" autocomplete="name" />
-          <label for="ownerPhone">手机或邮箱</label>
-          <input id="ownerPhone" name="ownerPhone" placeholder="用于老板身份记录，可不填" autocomplete="email" />
-          <label for="ownerCode">登录口令</label>
-          <input id="ownerCode" name="ownerCode" placeholder="请输入服务器上的登录口令" autocomplete="one-time-code" inputmode="numeric" required />
-          <button class="god-mode" type="submit">进入公司看板</button>
-          <p class="meta">登录后才能访问公司看板。系统不会发送短信、邮件或产生扣费。</p>
+        <form class="login-card" id="loginForm" data-auth-mode="login">
+          <div class="login-card-head">
+            <div>
+              <p class="eyebrow">安全入口</p>
+              <h2 id="authTitle">账号登录</h2>
+            </div>
+            <div class="auth-tabs" role="tablist" aria-label="登录或注册">
+              <button class="active" type="button" data-auth-mode="login" role="tab" aria-selected="true">登录</button>
+              <button type="button" data-auth-mode="register" role="tab" aria-selected="false">注册</button>
+            </div>
+          </div>
+          <label class="register-only" for="authName">怎么称呼您</label>
+          <input class="register-only" id="authName" name="name" value="张老板" autocomplete="name" />
+          <label for="authAccount">账号</label>
+          <input id="authAccount" name="account" placeholder="手机号、邮箱或自定义账号" autocomplete="username" required />
+          <label class="register-only" for="authPhone">联系手机或邮箱</label>
+          <input class="register-only" id="authPhone" name="phone" placeholder="用于老板资料，可不填" autocomplete="email" />
+          <label for="authPassword">密码</label>
+          <input id="authPassword" name="password" type="password" placeholder="至少6位" autocomplete="current-password" required />
+          <button class="god-mode" id="authSubmit" type="submit">进入经营台</button>
+          <p class="meta" id="authHint">登录后才能访问公司看板。所有公司资料都会跟当前账号绑定。</p>
         </form>
       </main>
     </section>

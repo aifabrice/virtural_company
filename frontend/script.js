@@ -106,9 +106,14 @@ const els = {
   productView: document.querySelector("#productView"),
   loginForm: document.querySelector("#loginForm"),
   demoLoginTop: document.querySelector("#demoLoginTop"),
-  ownerName: document.querySelector("#ownerName"),
-  ownerPhone: document.querySelector("#ownerPhone"),
-  ownerCode: document.querySelector("#ownerCode"),
+  authTitle: document.querySelector("#authTitle"),
+  authName: document.querySelector("#authName"),
+  authAccount: document.querySelector("#authAccount"),
+  authPhone: document.querySelector("#authPhone"),
+  authPassword: document.querySelector("#authPassword"),
+  authSubmit: document.querySelector("#authSubmit"),
+  authHint: document.querySelector("#authHint"),
+  authModeButtons: document.querySelectorAll(".auth-tabs [data-auth-mode]"),
   companySlug: document.querySelector("#companySlug"),
   companyName: document.querySelector("#companyName"),
   companyMood: document.querySelector("#companyMood"),
@@ -155,6 +160,7 @@ let modalCopyText = "";
 let currentView = "today";
 let conversationMessages = [];
 let conversationCompanyId = "";
+let authMode = "login";
 const compactViewport = window.matchMedia("(max-width: 980px)");
 
 function escapeHtml(value) {
@@ -268,7 +274,7 @@ function fetchJson(path, options = {}) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.ok === false) {
       if (response.status === 401 && !path.startsWith("/api/auth/")) {
-        redirectToLogin("登录已过期，请重新输入口令。");
+        redirectToLogin("登录已过期，请重新输入账号密码。");
       }
       throw new Error(data.error || `HTTP ${response.status}`);
     }
@@ -359,6 +365,7 @@ function showLogin() {
   els.productView.classList.add("hidden");
   els.loginView.hidden = false;
   els.productView.hidden = true;
+  setAuthMode("login");
   document.body.classList.remove("dashboard-ready");
   if (passiveTimer) {
     window.clearInterval(passiveTimer);
@@ -510,31 +517,62 @@ async function loadDashboard({ quiet = false } = {}) {
   }
 }
 
-async function login(ownerName, ownerPhone, ownerCode) {
-  const code = String(ownerCode || "").trim();
-  if (!code) {
-    toast("请输入登录口令");
-    els.ownerCode.focus();
+function setAuthMode(mode) {
+  authMode = mode === "register" ? "register" : "login";
+  els.loginForm.dataset.authMode = authMode;
+  els.authModeButtons.forEach((button) => {
+    const active = button.dataset.authMode === authMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  els.authTitle.textContent = authMode === "register" ? "注册老板账号" : "账号登录";
+  els.authSubmit.textContent = authMode === "register" ? "注册并进入" : "进入经营台";
+  els.authHint.textContent =
+    authMode === "register"
+      ? "注册后会自动进入当前公司，之后可在菜单里新建或切换公司。"
+      : "登录后才能访问公司看板。所有公司资料都会跟当前账号绑定。";
+  els.authPassword.setAttribute("autocomplete", authMode === "register" ? "new-password" : "current-password");
+}
+
+async function submitAuth() {
+  const account = els.authAccount.value.trim();
+  const password = els.authPassword.value.trim();
+  if (account.length < 3) {
+    toast("账号至少填写3个字符");
+    els.authAccount.focus();
     return;
   }
-  const submitButton = els.loginForm.querySelector('button[type="submit"]');
+  if (password.length < 6) {
+    toast("密码至少填写6位");
+    els.authPassword.focus();
+    return;
+  }
+  const submitButton = els.authSubmit;
+  const oldText = submitButton.textContent;
   submitButton.disabled = true;
+  submitButton.textContent = authMode === "register" ? "正在注册..." : "正在登录...";
   try {
-    const data = await fetchJson("/api/auth/login", {
+    const payload = { account, password };
+    if (authMode === "register") {
+      payload.name = els.authName.value.trim() || "老板";
+      payload.phone = els.authPhone.value.trim();
+    }
+    const data = await fetchJson(authMode === "register" ? "/api/auth/register" : "/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ name: ownerName, phone: ownerPhone, code }),
+      body: JSON.stringify(payload),
     });
     showProduct();
     renderDashboard(data.dashboard);
     history.replaceState(null, "", data.redirectTo || "/dashboard/fitscope");
-    pushLog("> 老板已通过口令进入公司看板");
-    toast("登录成功");
+    pushLog(authMode === "register" ? "> 老板账号已创建并进入经营台" : "> 老板已登录公司经营台");
+    toast(authMode === "register" ? "注册成功" : "登录成功");
     await checkAIBridge();
     startPassiveLogs();
   } catch (error) {
-    redirectToLogin(error.message || "登录失败，请检查口令。");
+    redirectToLogin(error.message || "登录失败，请检查账号和密码。");
   } finally {
     submitButton.disabled = false;
+    submitButton.textContent = oldText;
   }
 }
 
@@ -1067,14 +1105,21 @@ function startPassiveLogs() {
 }
 
 function initEvents() {
+  els.authModeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      setAuthMode(button.dataset.authMode);
+      window.setTimeout(() => els.authAccount.focus(), 0);
+    });
+  });
+
   els.loginForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    login(els.ownerName.value.trim() || "张老板", els.ownerPhone.value.trim(), els.ownerCode.value.trim());
+    submitAuth();
   });
 
   els.demoLoginTop.addEventListener("click", () => {
-    els.ownerCode.focus();
-    els.loginForm.requestSubmit();
+    setAuthMode("login");
+    els.authAccount.focus();
   });
 
   els.menuButton.addEventListener("click", () => {
@@ -1247,12 +1292,14 @@ function initEvents() {
 
 async function init() {
   renderTerminal();
+  setAuthMode("login");
   initEvents();
   try {
     const session = await fetchJson("/api/auth/session");
     if (session.loggedIn) {
-      if (session.owner?.name) els.ownerName.value = session.owner.name;
-      if (session.owner?.phone) els.ownerPhone.value = session.owner.phone;
+      if (session.owner?.name) els.authName.value = session.owner.name;
+      if (session.owner?.phone) els.authPhone.value = session.owner.phone;
+      if (session.owner?.account) els.authAccount.value = session.owner.account;
       showProduct();
       renderDashboard(fallbackDashboard);
       await loadDashboard({ quiet: true });

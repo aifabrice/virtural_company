@@ -2,7 +2,7 @@ const http = require("node:http");
 const fsp = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
-const { randomUUID } = require("node:crypto");
+const { randomUUID, scryptSync, timingSafeEqual } = require("node:crypto");
 const { spawn, execFileSync } = require("node:child_process");
 
 const PORT = Number(process.env.PORT || 5176);
@@ -12,12 +12,14 @@ const FRONTEND_DIR = process.env.FRONTEND_DIR || path.join(PROJECT_ROOT, "fronte
 const DATA_DIR = process.env.DATA_DIR || path.join(PROJECT_ROOT, ".data");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
 const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
+const USERS_FILE = path.join(DATA_DIR, "users.json");
 const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
 const MAX_BODY = 24 * 1024;
 const CLAUDE_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS || 180000);
 const SESSION_COOKIE = "qxb_session";
 const SESSION_TTL_MS = Number(process.env.QXB_SESSION_TTL_MS || 7 * 24 * 60 * 60 * 1000);
 const LOGIN_CODE = process.env.QXB_LOGIN_CODE || (process.env.NODE_ENV === "production" ? "" : "888888");
+const PASSWORD_KEY_LENGTH = 32;
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -132,6 +134,65 @@ async function saveSessions(sessions) {
   await fsp.rename(tmp, SESSIONS_FILE);
 }
 
+function normalizeAccount(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function hashPassword(password, salt = randomUUID()) {
+  return {
+    salt,
+    hash: scryptSync(String(password), salt, PASSWORD_KEY_LENGTH).toString("hex"),
+  };
+}
+
+function verifyPassword(password, user) {
+  if (!user?.passwordHash || !user?.passwordSalt) return false;
+  try {
+    const actual = Buffer.from(user.passwordHash, "hex");
+    const expected = scryptSync(String(password), user.passwordSalt, actual.length);
+    return actual.length === expected.length && timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
+}
+
+async function loadUsers() {
+  try {
+    const raw = await fsp.readFile(USERS_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed?.users && typeof parsed.users === "object" && !Array.isArray(parsed.users)) {
+      return parsed.users;
+    }
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveUsers(users) {
+  await fsp.mkdir(DATA_DIR, { recursive: true });
+  const tmp = `${USERS_FILE}.${process.pid}.tmp`;
+  await fsp.writeFile(tmp, `${JSON.stringify({ version: 1, users }, null, 2)}\n`, "utf8");
+  await fsp.rename(tmp, USERS_FILE);
+}
+
+async function createSession(user, companyId) {
+  const token = `${randomUUID()}${randomUUID()}`;
+  const sessions = await loadSessions();
+  sessions[token] = {
+    userId: user.id || "",
+    userAccount: user.account || "",
+    ownerName: user.name || "老板",
+    ownerPhone: user.phone || "",
+    companyId,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + SESSION_TTL_MS,
+  };
+  await saveSessions(sessions);
+  return token;
+}
+
 async function getSession(req) {
   const token = parseCookies(req)[SESSION_COOKIE];
   if (!token) return null;
@@ -150,6 +211,12 @@ async function requireSession(req, res) {
   if (session) return session;
   sendJson(res, 401, { ok: false, error: "请先登录老板入口。" });
   return null;
+}
+
+function validateAccountPassword(account, password) {
+  if (!account || account.length < 3 || account.length > 80) return "账号需要填写3到80个字符。";
+  if (!password || String(password).length < 6) return "密码至少需要6位。";
+  return "";
 }
 
 function cleanText(value, fallback, maxLength = 80) {
@@ -599,12 +666,29 @@ function companyList(state, activeCompanyId) {
   }));
 }
 
+function ownerForSession(state, session) {
+  return {
+    ...state.owner,
+    name: session?.ownerName || state.owner.name || "老板",
+    phone: session?.ownerPhone || state.owner.phone || "",
+    account: session?.userAccount || "",
+  };
+}
+
 async function updateSessionCompany(session, companyId) {
   const sessions = await loadSessions();
   if (sessions[session.token]) {
     sessions[session.token].companyId = companyId;
     sessions[session.token].expiresAt = Date.now() + SESSION_TTL_MS;
     await saveSessions(sessions);
+  }
+  if (session.userAccount) {
+    const users = await loadUsers();
+    if (users[session.userAccount]) {
+      users[session.userAccount].companyId = companyId;
+      users[session.userAccount].updatedAt = Date.now();
+      await saveUsers(users);
+    }
   }
 }
 
@@ -613,7 +697,7 @@ function publicDashboard(state, session) {
   return {
     company: workspace.company,
     companies: companyList(state, workspace.company.id),
-    owner: state.owner,
+    owner: ownerForSession(state, session),
     metrics: workspace.metrics,
     agents: workspace.agents,
     tasks: workspace.tasks,
@@ -868,7 +952,8 @@ async function handleApi(req, res) {
         ok: true,
         loggedIn: false,
         loginRequired: true,
-        loginConfigured: Boolean(LOGIN_CODE),
+        loginConfigured: true,
+        accountLogin: true,
       });
       return;
     }
@@ -876,15 +961,118 @@ async function handleApi(req, res) {
     sendJson(res, 200, {
       ok: true,
       loggedIn: true,
-      owner: state.owner,
+      owner: ownerForSession(state, session),
       company: workspace.company,
       companies: companyList(state, workspace.company.id),
     });
     return;
   }
 
+  if (url.pathname === "/api/auth/register" && req.method === "POST") {
+    const body = await readJsonBody(req);
+    const account = normalizeAccount(body.account || body.phone || body.email);
+    const password = String(body.password || "");
+    const validationError = validateAccountPassword(account, password);
+    if (validationError) {
+      sendJson(res, 400, { ok: false, error: validationError });
+      return;
+    }
+
+    const users = await loadUsers();
+    if (users[account]) {
+      sendJson(res, 409, { ok: false, error: "这个账号已经注册过，请直接登录。" });
+      return;
+    }
+
+    const state = await loadState();
+    const registerWorkspace = workspaceForSession(state, { companyId: state.activeCompanyId });
+    const passwordData = hashPassword(password);
+    const user = {
+      id: id("user"),
+      account,
+      name: cleanText(body.name, "老板", 24),
+      phone: cleanText(body.phone, "", 80),
+      passwordSalt: passwordData.salt,
+      passwordHash: passwordData.hash,
+      companyId: registerWorkspace.company.id,
+      createdAt: Date.now(),
+      lastLoginAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    users[account] = user;
+    state.owner.name = user.name;
+    state.owner.phone = user.phone || account;
+    state.owner.lastLoginAt = nowLabel();
+    state.activeCompanyId = registerWorkspace.company.id;
+    pushActivity(registerWorkspace, `${user.name}注册并进入了公司经营看板。`);
+    await saveUsers(users);
+    await saveState(state);
+
+    const token = await createSession(user, registerWorkspace.company.id);
+    res.setHeader("Set-Cookie", sessionCookie(token, Math.floor(SESSION_TTL_MS / 1000)));
+    sendJson(res, 200, {
+      ok: true,
+      redirectTo: `/dashboard/${registerWorkspace.company.slug}`,
+      dashboard: publicDashboard(state, {
+        userAccount: user.account,
+        ownerName: user.name,
+        ownerPhone: user.phone,
+        companyId: registerWorkspace.company.id,
+      }),
+    });
+    return;
+  }
+
   if (url.pathname === "/api/auth/login" && req.method === "POST") {
     const body = await readJsonBody(req);
+    const wantsPasswordLogin = Boolean(body.account || body.email || body.password);
+    const account = normalizeAccount(body.account || body.email || (body.password ? body.phone : ""));
+    const password = String(body.password || "");
+    if (wantsPasswordLogin) {
+      const validationError = validateAccountPassword(account, password);
+      if (validationError) {
+        sendJson(res, 400, { ok: false, error: validationError });
+        return;
+      }
+
+      const users = await loadUsers();
+      const user = users[account];
+      if (!user || !verifyPassword(password, user)) {
+        sendJson(res, 401, { ok: false, error: "账号或密码不正确，请重新输入。" });
+        return;
+      }
+
+      const state = await loadState();
+      const loginWorkspace =
+        state.companies.find((workspace) => workspace.company.id === user.companyId) ||
+        workspaceForSession(state, { companyId: state.activeCompanyId });
+      user.companyId = loginWorkspace.company.id;
+      user.lastLoginAt = Date.now();
+      users[account] = user;
+      state.owner.name = user.name || state.owner.name || "老板";
+      state.owner.phone = user.phone || user.account || "";
+      state.owner.lastLoginAt = nowLabel();
+      state.activeCompanyId = loginWorkspace.company.id;
+      pushActivity(loginWorkspace, `${state.owner.name}登录了公司经营看板。`);
+      await saveUsers(users);
+      await saveState(state);
+
+      const token = await createSession(user, loginWorkspace.company.id);
+      res.setHeader("Set-Cookie", sessionCookie(token, Math.floor(SESSION_TTL_MS / 1000)));
+      sendJson(res, 200, {
+        ok: true,
+        redirectTo: `/dashboard/${loginWorkspace.company.slug}`,
+        dashboard: publicDashboard(state, {
+          userAccount: user.account,
+          ownerName: user.name,
+          ownerPhone: user.phone,
+          companyId: loginWorkspace.company.id,
+        }),
+      });
+      return;
+    }
+
     if (!LOGIN_CODE) {
       sendJson(res, 503, { ok: false, error: "服务器还没有配置登录口令。" });
       return;
@@ -907,6 +1095,7 @@ async function handleApi(req, res) {
     const sessions = await loadSessions();
     sessions[token] = {
       ownerName: state.owner.name,
+      ownerPhone: state.owner.phone,
       companyId: loginWorkspace.company.id,
       createdAt: Date.now(),
       expiresAt: Date.now() + SESSION_TTL_MS,
@@ -1011,9 +1200,32 @@ async function handleApi(req, res) {
     state.owner.name = cleanText(body.name, state.owner.name, 24);
     state.owner.phone = cleanText(body.phone || body.email, state.owner.phone, 80);
     state.owner.reportTime = cleanText(body.reportTime, state.owner.reportTime || "每天上午9点", 40);
+    if (session.userAccount) {
+      const users = await loadUsers();
+      if (users[session.userAccount]) {
+        users[session.userAccount].name = state.owner.name;
+        users[session.userAccount].phone = state.owner.phone;
+        users[session.userAccount].updatedAt = Date.now();
+        await saveUsers(users);
+      }
+      const sessions = await loadSessions();
+      if (sessions[session.token]) {
+        sessions[session.token].ownerName = state.owner.name;
+        sessions[session.token].ownerPhone = state.owner.phone;
+        sessions[session.token].expiresAt = Date.now() + SESSION_TTL_MS;
+        await saveSessions(sessions);
+      }
+    }
     pushActivity(workspace, `${state.owner.name}更新了老板资料和汇报时间。`);
     await saveState(state);
-    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state, session) });
+    sendJson(res, 200, {
+      ok: true,
+      dashboard: publicDashboard(state, {
+        ...session,
+        ownerName: state.owner.name,
+        ownerPhone: state.owner.phone,
+      }),
+    });
     return;
   }
 
