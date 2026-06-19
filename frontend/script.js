@@ -122,7 +122,7 @@ const els = {
   channelList: document.querySelector("#channelList"),
   socialDraft: document.querySelector("#socialDraft"),
   activityList: document.querySelector("#activityList"),
-  inboxCard: document.querySelector("#inboxCard"),
+  inboxList: document.querySelector("#inboxList"),
   runCycleButton: document.querySelector("#runCycleButton"),
   refreshDashboard: document.querySelector("#refreshDashboard"),
   healthButton: document.querySelector("#healthButton"),
@@ -156,6 +156,7 @@ let modalCopyText = "";
 let currentView = "today";
 let conversationMessages = [];
 let conversationCompanyId = "";
+let inboxItems = [];
 const compactViewport = window.matchMedia("(max-width: 980px)");
 
 function escapeHtml(value) {
@@ -254,6 +255,25 @@ function renderMessageText(value) {
   closeList();
   if (inCodeBlock && codeLines.length) flushCode();
   return html.join("");
+}
+
+function plainBusinessText(value) {
+  return String(value || "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/^\s*[-*•]\s+/gm, "")
+    .replace(/^\s*\d+[.、)]\s+/gm, "")
+    .replace(/^>\s+/gm, "")
+    .replace(/\*\*/g, "")
+    .replace(/__/g, "")
+    .replace(/`/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function previewBusinessText(value, maxLength = 150) {
+  const text = plainBusinessText(value);
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
 function fetchJson(path, options = {}) {
@@ -376,7 +396,7 @@ function redirectToLogin(message) {
 }
 
 function setDashboardView(view) {
-  currentView = view || "today";
+  currentView = view === "settings" ? "inbox" : view || "today";
   els.dashboard.dataset.view = currentView;
   document.querySelectorAll("[data-view-panel]").forEach((panel) => {
     const views = String(panel.dataset.viewPanel || "").split(/\s+/);
@@ -481,7 +501,22 @@ function renderDashboard(data) {
     .map((item) => `<article class="activity-item"><span>${escapeHtml(item.time)}</span><p>${escapeHtml(item.text)}</p></article>`)
     .join("");
 
-  els.inboxCard.innerHTML = `<p><strong>${escapeHtml(inbox.title)}</strong></p><p>${escapeHtml(inbox.body)}</p>`;
+  inboxItems = buildInboxItems({ inbox, tasks, documents, activity, updatedAt });
+  els.inboxList.innerHTML = inboxItems
+    .map(
+      (item) => `<article class="inbox-item" data-inbox-item="${escapeHtml(item.id)}" tabindex="0">
+        <div class="inbox-item-main">
+          <div class="inbox-item-top">
+            <span class="tag ${item.kind === "待确认" ? "urgent" : ""}">${escapeHtml(item.kind)}</span>
+            <span class="meta">${escapeHtml(item.time || "")}</span>
+          </div>
+          <strong>${escapeHtml(item.title)}</strong>
+          <p>${escapeHtml(previewBusinessText(item.body))}</p>
+        </div>
+        <button class="bevel" type="button" data-inbox-open="${escapeHtml(item.id)}">${escapeHtml(item.action)}</button>
+      </article>`,
+    )
+    .join("");
   setDashboardView(currentView);
   ensureConversationGreeting();
 }
@@ -578,6 +613,108 @@ function documentText(doc) {
     return "收款开通清单\n1. 营业执照\n2. 法人或经办人信息\n3. 对公账户\n4. 微信/支付宝商户资料\n注意：正式开通前需要老板确认。";
   }
   return `${company.name}今日经营简报\n今日待确认：${dashboardState.tasks?.slice(0, 3).map((task) => task.title).join("、") || "暂无"}\nAI建议：先确认报价，再推进老客户回访和收款准备。`;
+}
+
+function buildInboxItems(source) {
+  const tasks = source.tasks || [];
+  const documents = source.documents || [];
+  const activity = source.activity || [];
+  const items = [];
+
+  if (source.inbox?.title || source.inbox?.body) {
+    items.push({
+      id: "latest_result",
+      kind: "最新结果",
+      title: source.inbox?.title || "AI已经有新结果",
+      body: source.inbox?.body || "有一条需要老板查看的新消息。",
+      time: source.updatedAt || "刚刚",
+      action: "查看",
+    });
+  }
+
+  tasks.forEach((task) => {
+    items.push({
+      id: `task_${task.id}`,
+      kind: "待确认",
+      title: task.title,
+      body: task.nextStep || task.body,
+      time: task.priority || task.status || "今天",
+      action: "处理",
+      taskId: task.id,
+    });
+  });
+
+  documents.forEach((doc) => {
+    items.push({
+      id: `doc_${doc.id}`,
+      kind: "资料",
+      title: doc.title,
+      body: `${doc.type || "资料"}已准备好，可以打开查看、复制或让AI继续优化。`,
+      time: doc.age || "",
+      action: "查看资料",
+      docId: doc.id,
+    });
+  });
+
+  activity.forEach((item) => {
+    items.push({
+      id: `activity_${item.id}`,
+      kind: "记录",
+      title: item.text,
+      body: "这条记录已经写入公司经营台。",
+      time: item.time || "",
+      action: "查看",
+    });
+  });
+
+  if (!items.length) {
+    items.push({
+      id: "empty",
+      kind: "提示",
+      title: "暂时没有新消息",
+      body: "AI员工有结果后，会统一放到这里。",
+      time: "",
+      action: "知道了",
+    });
+  }
+
+  return items;
+}
+
+function openInboxItem(itemId) {
+  const item = inboxItems.find((entry) => entry.id === itemId);
+  if (!item) return;
+
+  if (item.taskId) {
+    const task = dashboardState.tasks.find((entry) => entry.id === item.taskId);
+    if (!task) return;
+    setModal(
+      task.title,
+      `<p>${escapeHtml(task.body)}</p>
+      <p class="meta">${escapeHtml(task.owner)} · ${escapeHtml(task.status)} · ${escapeHtml(task.priority)}</p>
+      <p>${escapeHtml(task.nextStep || "老板确认后，AI继续推进。")}</p>
+      <div class="task-actions">
+        <button type="button" data-task-choice="confirm" data-task-id="${escapeHtml(task.id)}">同意</button>
+        <button type="button" data-task-choice="agent" data-task-id="${escapeHtml(task.id)}">交给AI</button>
+        <button type="button" data-task-choice="pause" data-task-id="${escapeHtml(task.id)}">先不做</button>
+      </div>`,
+      "inboxTask",
+    );
+    return;
+  }
+
+  if (item.docId) {
+    const doc = dashboardState.documents.find((entry) => entry.id === item.docId);
+    if (doc) openModal("doc", { doc });
+    return;
+  }
+
+  setModal(
+    item.title,
+    `<div class="message-body">${renderMessageText(item.body)}</div>
+    <p class="meta">${escapeHtml([item.kind, item.time].filter(Boolean).join(" · "))}</p>`,
+    "inboxItem",
+  );
 }
 
 function openModal(key, detail) {
@@ -1035,6 +1172,18 @@ function initEvents() {
     const choiceNode = target.closest("[data-task-choice]");
     if (choiceNode) {
       updateTask(choiceNode.dataset.taskId, choiceNode.dataset.taskChoice);
+      return;
+    }
+
+    const inboxOpenNode = target.closest("[data-inbox-open]");
+    if (inboxOpenNode) {
+      openInboxItem(inboxOpenNode.dataset.inboxOpen);
+      return;
+    }
+
+    const inboxItemNode = target.closest("[data-inbox-item]");
+    if (inboxItemNode) {
+      openInboxItem(inboxItemNode.dataset.inboxItem);
       return;
     }
 

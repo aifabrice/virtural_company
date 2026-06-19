@@ -271,6 +271,7 @@ h1, h2 { margin: 0; line-height: 1.12; text-wrap: balance; letter-spacing: 0; }
 [data-view-panel][hidden] { display: none !important; }
 .dashboard[data-view="agents"],
 .dashboard[data-view="records"],
+.dashboard[data-view="inbox"],
 .dashboard[data-view="settings"],
 .dashboard[data-view="channels"] {
   grid-template-columns: minmax(0, 1fr);
@@ -280,6 +281,7 @@ h1, h2 { margin: 0; line-height: 1.12; text-wrap: balance; letter-spacing: 0; }
 }
 .dashboard[data-view="agents"] .panel,
 .dashboard[data-view="records"] .panel,
+.dashboard[data-view="inbox"] .panel,
 .dashboard[data-view="settings"] .panel,
 .dashboard[data-view="channels"] .panel {
   grid-column: 1 / -1;
@@ -365,8 +367,8 @@ h2 {
 .focus-list strong, .focus-list span { display: block; }
 .focus-list strong { font-size: 18px; }
 .focus-list span { color: var(--muted); font-size: 15px; }
-.agent-list, .task-list, .doc-list, .channel-list, .activity-list { display: grid; gap: 11px; }
-.agent-card, .task-card, .channel-card, .soft-card, .activity-item {
+.agent-list, .task-list, .doc-list, .channel-list, .activity-list, .inbox-list { display: grid; gap: 11px; }
+.agent-card, .task-card, .channel-card, .soft-card, .activity-item, .inbox-item {
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--surface-2);
@@ -389,6 +391,38 @@ h2 {
 .agent-card p, .task-card p, .soft-card p, .activity-item p {
   margin: 8px 0;
   color: var(--muted);
+}
+.inbox-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  cursor: pointer;
+}
+.inbox-item:hover { border-color: oklch(0.68 0.08 60); }
+.inbox-item-main {
+  min-width: 0;
+}
+.inbox-item-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.inbox-item strong {
+  display: block;
+  font-size: 18px;
+  line-height: 1.28;
+}
+.inbox-item p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+.inbox-item .bevel {
+  min-height: 38px;
+  font-size: 14px;
+  padding: 9px 12px;
 }
 .progress {
   height: 9px;
@@ -948,6 +982,11 @@ textarea::placeholder { color: oklch(0.58 0.02 72); }
   h2 { font-size: 23px; }
   .doc-button { grid-template-columns: 38px 1fr; }
   .doc-button .meta { grid-column: 2; }
+  .inbox-item {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .inbox-item .bevel { width: 100%; }
   .channel-card { grid-template-columns: 1fr; }
   .channel-card .bevel { grid-column: auto; grid-row: auto; }
   .activity-item { grid-template-columns: 1fr; }
