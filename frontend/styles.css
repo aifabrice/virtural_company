@@ -253,16 +253,21 @@ h1, h2 { margin: 0; line-height: 1.12; text-wrap: balance; letter-spacing: 0; }
   background: rgba(255, 253, 247, 0.58);
   padding: 16px 10px;
 }
-.side-nav a {
+.side-nav button {
   display: block;
+  width: 100%;
+  border: 0;
   border-radius: 7px;
+  background: transparent;
   color: var(--muted);
+  cursor: pointer;
   font-size: 16px;
   font-weight: 800;
   margin-bottom: 8px;
   padding: 12px 10px;
+  text-align: left;
 }
-.side-nav a:hover, .side-nav a.active {
+.side-nav button:hover, .side-nav button.active {
   background: var(--surface);
   color: var(--ink);
   box-shadow: var(--shadow-soft);
@@ -273,7 +278,24 @@ h1, h2 { margin: 0; line-height: 1.12; text-wrap: balance; letter-spacing: 0; }
   grid-template-columns: repeat(3, minmax(260px, 1fr));
   gap: var(--gap);
   align-items: start;
+  align-content: start;
   padding: 18px;
+}
+[data-view-panel][hidden] { display: none !important; }
+.dashboard[data-view="agents"],
+.dashboard[data-view="records"],
+.dashboard[data-view="settings"],
+.dashboard[data-view="channels"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.dashboard[data-view="tasks"] {
+  grid-template-columns: minmax(360px, 1.2fr) minmax(300px, 0.8fr);
+}
+.dashboard[data-view="agents"] .panel,
+.dashboard[data-view="records"] .panel,
+.dashboard[data-view="settings"] .panel,
+.dashboard[data-view="channels"] .panel {
+  grid-column: 1 / -1;
 }
 .hero-panel, .panel, .metric-card {
   min-width: 0;
@@ -713,6 +735,20 @@ textarea::placeholder { color: oklch(0.58 0.02 72); }
   padding: 13px;
 }
 .modal-item strong { display: block; margin-bottom: 5px; }
+.company-switch-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+.company-switch-item.active-company {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.company-switch-item .bevel,
+.company-switch-item .god-mode {
+  min-height: 40px;
+}
 .modal-actions {
   display: flex;
   flex-wrap: wrap;
@@ -786,8 +822,14 @@ textarea::placeholder { color: oklch(0.58 0.02 72); }
     border-bottom: 1px solid rgba(55, 40, 24, 0.13);
     padding: 10px 12px;
   }
-  .side-nav a { flex: 0 0 auto; margin-bottom: 0; }
+  .side-nav button {
+    flex: 0 0 auto;
+    width: auto;
+    margin-bottom: 0;
+    white-space: nowrap;
+  }
   .dashboard { grid-template-columns: 1fr; padding: 14px; }
+  .dashboard[data-view] { grid-template-columns: 1fr; }
   .metric-grid { grid-template-columns: 1fr 1fr; }
   .hero-panel { grid-template-columns: 1fr; padding: 22px; }
   .hero-panel h1 { font-size: 40px; }

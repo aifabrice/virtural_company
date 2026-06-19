@@ -1,3 +1,10 @@
+**Multi-Company And Workspace Layout QA**
+- Request: New companies must not overwrite old companies, and left navigation should not scroll into sparse, broken grid positions.
+- Data check: login opens one active company per session; creating a new company creates a separate workspace and immediately switches the session to `/dashboard/company-*`; switching back from "我的公司" restores the old company and its original tasks.
+- Layout check: side navigation now switches visible dashboard sections instead of anchor-scrolling through one long masonry-like grid. "今天", "AI员工", "待确认", "获客", "记录", and "设置" each render a focused section without large empty columns.
+- Browser check: created "新辰贸易", confirmed it opened on its own URL, then switched back to "顺达机械" from the company switcher.
+- final result: passed
+
 **Auth And Button Actions QA**
 - Request: Keep existing buttons while making them actually respond, and replace rough direct dashboard access with login protection.
 - Auth check: unauthenticated `GET /dashboard/fitscope` returns `302 /login`; unauthenticated `GET /api/dashboard` returns `401`.

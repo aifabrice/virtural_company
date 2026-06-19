@@ -36,6 +36,7 @@ http://localhost:5176/login
 - `POST /api/auth/logout`
 - `GET /api/dashboard`
 - `PATCH /api/company`
+- `POST /api/company/switch`
 - `PATCH /api/owner`
 - `POST /api/billing/top-up`
 - `POST /api/plan/upgrade`

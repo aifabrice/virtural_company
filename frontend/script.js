@@ -7,6 +7,7 @@ const fallbackDashboard = {
     reportTime: "每天上午9点",
   },
   company: {
+    id: "company_fitscope",
     slug: "fitscope",
     name: "顺达机械",
     industry: "本地工厂设备维护",
@@ -78,6 +79,9 @@ const fallbackDashboard = {
     body: "顺达机械可为本地工厂提供设备维护、备件供应和定期巡检服务，减少停机时间。",
     status: "草稿，未发送",
   },
+  companies: [
+    { id: "company_fitscope", slug: "fitscope", name: "顺达机械", industry: "本地工厂设备维护", isActive: true },
+  ],
   updatedAt: "本地演示",
 };
 
@@ -108,6 +112,7 @@ const els = {
   companySlug: document.querySelector("#companySlug"),
   companyName: document.querySelector("#companyName"),
   companyMood: document.querySelector("#companyMood"),
+  dashboard: document.querySelector("#dashboard"),
   updatedAt: document.querySelector("#updatedAt"),
   metricGrid: document.querySelector("#metricGrid"),
   focusList: document.querySelector("#focusList"),
@@ -148,6 +153,7 @@ let claudeBusy = false;
 let claudeConnected = false;
 let passiveTimer = null;
 let modalCopyText = "";
+let currentView = "today";
 const compactViewport = window.matchMedia("(max-width: 980px)");
 
 function escapeHtml(value) {
@@ -231,11 +237,24 @@ function redirectToLogin(message) {
   if (message) toast(message);
 }
 
+function setDashboardView(view) {
+  currentView = view || "today";
+  els.dashboard.dataset.view = currentView;
+  document.querySelectorAll("[data-view-panel]").forEach((panel) => {
+    const views = String(panel.dataset.viewPanel || "").split(/\s+/);
+    panel.hidden = !views.includes(currentView);
+  });
+  document.querySelectorAll("[data-view]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.view === currentView);
+  });
+}
+
 function renderDashboard(data) {
   dashboardState = data || fallbackDashboard;
   const { company, metrics, agents, tasks, documents, channels, activity, inbox, socialDraft, updatedAt } = dashboardState;
 
   els.companySlug.textContent = `/dashboard/${company.slug || "fitscope"}`;
+  document.querySelector(".brand > span").textContent = company.name || "顺达机械";
   els.companyName.textContent = company.name || "顺达机械";
   els.companyMood.textContent = company.mood || "AI员工正在替公司推进今天的经营任务";
   els.updatedAt.textContent = `更新：${updatedAt || "刚刚"}`;
@@ -321,6 +340,7 @@ function renderDashboard(data) {
     .join("");
 
   els.inboxCard.innerHTML = `<p><strong>${escapeHtml(inbox.title)}</strong></p><p>${escapeHtml(inbox.body)}</p>`;
+  setDashboardView(currentView);
 }
 
 async function loadDashboard({ quiet = false } = {}) {
@@ -482,14 +502,26 @@ function openModal(key, detail) {
   }
   if (key === "companies") {
     const company = dashboardState.company || fallbackDashboard.company;
+    const companies = dashboardState.companies?.length
+      ? dashboardState.companies
+      : [{ ...company, isActive: true }];
     setModal(
       "我的公司",
       `<div class="modal-list">
-        <article class="modal-item">
-          <strong>${escapeHtml(company.name)}</strong>
-          <p>${escapeHtml(company.industry)}</p>
-          <span class="meta">当前正在使用</span>
-        </article>
+        ${companies
+          .map(
+            (item) => `<article class="modal-item company-switch-item ${item.isActive ? "active-company" : ""}">
+              <div>
+                <strong>${escapeHtml(item.name)}</strong>
+                <p>${escapeHtml(item.industry || "未填写主营业务")}</p>
+                <span class="meta">${item.isActive ? "当前正在使用" : "可切换进入"}</span>
+              </div>
+              <button class="${item.isActive ? "bevel" : "god-mode"}" type="button" data-switch-company="${escapeHtml(item.id)}" ${item.isActive ? "disabled" : ""}>
+                ${item.isActive ? "当前公司" : "进入"}
+              </button>
+            </article>`,
+          )
+          .join("")}
       </div>
       <div class="modal-actions">
         <button class="bevel" type="button" data-modal="companySettings">修改当前公司</button>
@@ -673,7 +705,8 @@ async function saveCompany(form) {
       }),
     });
     renderDashboard(data.dashboard);
-    history.replaceState(null, "", data.dashboard?.company?.slug ? `/dashboard/${data.dashboard.company.slug}` : "/dashboard/fitscope");
+    history.replaceState(null, "", data.redirectTo || (data.dashboard?.company?.slug ? `/dashboard/${data.dashboard.company.slug}` : "/dashboard/fitscope"));
+    setDashboardView("today");
     closeModal();
     toast(form.dataset.mode === "new" ? "新公司已建好" : "公司资料已保存");
     pushLog(form.dataset.mode === "new" ? "> 已新建公司看板" : "> 已更新公司资料");
@@ -681,6 +714,24 @@ async function saveCompany(form) {
     toast(error.message || "保存失败");
   } finally {
     button.disabled = false;
+  }
+}
+
+async function switchCompany(companyId) {
+  if (!companyId) return;
+  try {
+    const data = await fetchJson("/api/company/switch", {
+      method: "POST",
+      body: JSON.stringify({ companyId }),
+    });
+    renderDashboard(data.dashboard);
+    history.replaceState(null, "", data.redirectTo || `/dashboard/${data.dashboard?.company?.slug || "fitscope"}`);
+    setDashboardView("today");
+    closeModal();
+    toast(`已进入${data.dashboard?.company?.name || "这家公司"}`);
+    pushLog(`> 已切换公司：${data.dashboard?.company?.name || ""}`);
+  } catch (error) {
+    toast(error.message || "切换公司失败");
   }
 }
 
@@ -830,6 +881,18 @@ function initEvents() {
     const modalNode = target.closest("[data-modal]");
     if (modalNode) {
       openModal(modalNode.dataset.modal);
+      return;
+    }
+
+    const viewNode = target.closest("[data-view]");
+    if (viewNode) {
+      setDashboardView(viewNode.dataset.view);
+      return;
+    }
+
+    const switchCompanyNode = target.closest("[data-switch-company]");
+    if (switchCompanyNode) {
+      switchCompany(switchCompanyNode.dataset.switchCompany);
       return;
     }
 

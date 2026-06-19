@@ -69,16 +69,16 @@
 
       <div class="app-shell chat-open" id="appShell">
         <nav class="side-nav" aria-label="公司功能">
-          <a class="active" href="#today">今天</a>
-          <a href="#agents">AI员工</a>
-          <a href="#tasks">待确认</a>
-          <a href="#channels">获客</a>
-          <a href="#records">记录</a>
-          <a href="#settings">设置</a>
+          <button class="active" type="button" data-view="today">今天</button>
+          <button type="button" data-view="agents">AI员工</button>
+          <button type="button" data-view="tasks">待确认</button>
+          <button type="button" data-view="channels">获客</button>
+          <button type="button" data-view="records">记录</button>
+          <button type="button" data-view="settings">设置</button>
         </nav>
 
         <main class="dashboard" id="dashboard" aria-label="公司经营看板">
-          <section class="hero-panel" id="today">
+          <section class="hero-panel" id="today" data-view-panel="today">
             <div>
               <p class="eyebrow">Autonomous company dashboard</p>
               <h1 id="companyName">顺达机械</h1>
@@ -87,9 +87,9 @@
             <button class="god-mode" id="runCycleButton" type="button">让AI继续干活</button>
           </section>
 
-          <section class="metric-grid" id="metricGrid" aria-label="关键数字"></section>
+          <section class="metric-grid" id="metricGrid" aria-label="关键数字" data-view-panel="today"></section>
 
-          <section class="panel focus-panel">
+          <section class="panel focus-panel" data-view-panel="today">
             <div class="section-head">
               <h2>老板今天只看这三件事</h2>
               <span class="meta" id="updatedAt">正在更新</span>
@@ -97,7 +97,7 @@
             <ol class="focus-list" id="focusList"></ol>
           </section>
 
-          <section class="panel" id="agents">
+          <section class="panel" id="agents" data-view-panel="agents">
             <div class="section-head">
               <h2>AI员工正在做什么</h2>
               <button class="text-button" id="refreshDashboard" type="button">刷新</button>
@@ -105,7 +105,7 @@
             <div class="agent-list" id="agentList"></div>
           </section>
 
-          <section class="panel" id="tasks">
+          <section class="panel" id="tasks" data-view-panel="tasks">
             <div class="section-head">
               <h2>等老板确认</h2>
               <button class="text-button" data-modal="manageTasks" type="button">查看全部</button>
@@ -113,7 +113,7 @@
             <div class="task-list" id="taskList"></div>
           </section>
 
-          <section class="panel">
+          <section class="panel" data-view-panel="tasks">
             <div class="section-head">
               <h2>资料和报告</h2>
               <span class="meta">可直接给员工看</span>
@@ -121,7 +121,7 @@
             <div class="doc-list" id="docList"></div>
           </section>
 
-          <section class="panel" id="channels">
+          <section class="panel" id="channels" data-view-panel="channels">
             <div class="section-head">
               <h2>对外获客和收款</h2>
               <span class="meta">先草稿，后确认</span>
@@ -130,7 +130,7 @@
             <article class="soft-card compact" id="socialDraft"></article>
           </section>
 
-          <section class="panel" id="records">
+          <section class="panel" id="records" data-view-panel="records">
             <div class="section-head">
               <h2>AI执行记录</h2>
               <span class="meta">最近动作</span>
@@ -138,7 +138,7 @@
             <div class="activity-list" id="activityList"></div>
           </section>
 
-          <section class="panel" id="settings">
+          <section class="panel" id="settings" data-view-panel="settings">
             <div class="section-head">
               <h2>老板收件箱</h2>
               <span class="meta">需要您看的结果</span>

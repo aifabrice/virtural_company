@@ -162,8 +162,8 @@ function pushActivity(state, text) {
   state.activity = state.activity.slice(0, 12);
 }
 
-function currentBudget(state) {
-  const budget = state.metrics.find((item) => item.label === "本月预算");
+function currentBudget(workspace) {
+  const budget = workspace.metrics.find((item) => item.label === "本月预算");
   const match = String(budget?.value || "").match(/\d+/);
   return Number(match?.[0] || 0);
 }
@@ -295,14 +295,68 @@ function normalizeLegacyProviderText(value) {
   return value;
 }
 
+function workspaceFromLegacy(state) {
+  return {
+    company: state.company,
+    metrics: state.metrics,
+    agents: state.agents,
+    tasks: state.tasks,
+    documents: state.documents,
+    channels: state.channels,
+    activity: state.activity,
+    inbox: state.inbox,
+    socialDraft: state.socialDraft,
+    cycleCount: Number(state.cycleCount) || 0,
+  };
+}
+
+function normalizeWorkspace(workspace) {
+  const fallback = workspaceFromLegacy(defaultState());
+  const company = { ...fallback.company, ...(workspace?.company || {}) };
+  company.id = company.id || id("company");
+  company.slug = company.slug || `company-${company.id.replace(/^company_/, "").slice(0, 8)}`;
+  return {
+    company,
+    metrics: Array.isArray(workspace?.metrics) ? workspace.metrics : fallback.metrics,
+    agents: Array.isArray(workspace?.agents) ? workspace.agents : fallback.agents,
+    tasks: Array.isArray(workspace?.tasks) ? workspace.tasks : fallback.tasks,
+    documents: Array.isArray(workspace?.documents) ? workspace.documents : fallback.documents,
+    channels: Array.isArray(workspace?.channels) ? workspace.channels : fallback.channels,
+    activity: Array.isArray(workspace?.activity) ? workspace.activity : fallback.activity,
+    inbox: workspace?.inbox || fallback.inbox,
+    socialDraft: workspace?.socialDraft || fallback.socialDraft,
+    cycleCount: Number(workspace?.cycleCount) || 0,
+  };
+}
+
+function normalizeState(rawState) {
+  const normalized = normalizeLegacyProviderText(rawState || defaultState());
+  const companies = Array.isArray(normalized.companies) && normalized.companies.length
+    ? normalized.companies.map((workspace) => normalizeWorkspace(workspace))
+    : [normalizeWorkspace(workspaceFromLegacy(normalized))];
+  const activeCompanyId =
+    normalized.activeCompanyId ||
+    normalized.company?.id ||
+    companies[0].company.id;
+  return {
+    ...normalized,
+    version: 2,
+    owner: normalized.owner || defaultState().owner,
+    companies,
+    activeCompanyId: companies.some((workspace) => workspace.company.id === activeCompanyId)
+      ? activeCompanyId
+      : companies[0].company.id,
+  };
+}
+
 async function loadState() {
   try {
     const raw = await fsp.readFile(STATE_FILE, "utf8");
     const parsed = JSON.parse(raw);
-    if (!parsed || parsed.version !== 1) return defaultState();
-    return normalizeLegacyProviderText(parsed);
+    if (!parsed || ![1, 2].includes(parsed.version)) return normalizeState(defaultState());
+    return normalizeState(parsed);
   } catch {
-    return defaultState();
+    return normalizeState(defaultState());
   }
 }
 
@@ -313,19 +367,48 @@ async function saveState(state) {
   await fsp.rename(tmp, STATE_FILE);
 }
 
-function publicDashboard(state) {
+function workspaceForSession(state, session) {
+  const companyId = session?.companyId || state.activeCompanyId;
+  return (
+    state.companies.find((workspace) => workspace.company.id === companyId) ||
+    state.companies[0]
+  );
+}
+
+function companyList(state, activeCompanyId) {
+  return state.companies.map((workspace) => ({
+    id: workspace.company.id,
+    slug: workspace.company.slug,
+    name: workspace.company.name,
+    industry: workspace.company.industry,
+    isActive: workspace.company.id === activeCompanyId,
+  }));
+}
+
+async function updateSessionCompany(session, companyId) {
+  const sessions = await loadSessions();
+  if (sessions[session.token]) {
+    sessions[session.token].companyId = companyId;
+    sessions[session.token].expiresAt = Date.now() + SESSION_TTL_MS;
+    await saveSessions(sessions);
+  }
+}
+
+function publicDashboard(state, session) {
+  const workspace = workspaceForSession(state, session);
   return {
-    company: state.company,
+    company: workspace.company,
+    companies: companyList(state, workspace.company.id),
     owner: state.owner,
-    metrics: state.metrics,
-    agents: state.agents,
-    tasks: state.tasks,
-    documents: state.documents,
-    channels: state.channels,
-    activity: state.activity,
-    inbox: state.inbox,
-    socialDraft: state.socialDraft,
-    cycleCount: state.cycleCount,
+    metrics: workspace.metrics,
+    agents: workspace.agents,
+    tasks: workspace.tasks,
+    documents: workspace.documents,
+    channels: workspace.channels,
+    activity: workspace.activity,
+    inbox: workspace.inbox,
+    socialDraft: workspace.socialDraft,
+    cycleCount: workspace.cycleCount,
     updatedAt: nowLabel(),
   };
 }
@@ -480,7 +563,7 @@ function serializeClaudeJob(job) {
   };
 }
 
-function startClaudeJob(message) {
+function startClaudeJob(message, companyId) {
   cleanupClaudeJobs();
   const job = {
     id: id("job"),
@@ -495,20 +578,21 @@ function startClaudeJob(message) {
   claudeJobs.set(job.id, job);
 
   (async () => {
-    let state = await loadState();
-    const result = await runClaude(message, state);
+    const state = await loadState();
+    const workspace = workspaceForSession(state, { companyId });
+    const result = await runClaude(message, workspace);
     job.durationMs = result.durationMs;
     job.completedAt = Date.now();
     if (result.ok) {
-      state = await appendActivity(`Claude Code已完成老板指令：${message.slice(0, 32)}。`);
-      state.inbox = {
+      pushActivity(workspace, `Claude Code已完成老板指令：${message.slice(0, 32)}。`);
+      workspace.inbox = {
         title: "Claude Code 已返回结果",
         body: result.output.slice(0, 220),
       };
       await saveState(state);
       job.status = "done";
       job.output = result.output;
-      job.dashboard = publicDashboard(state);
+      job.dashboard = publicDashboard(state, { companyId: workspace.company.id });
     } else {
       job.status = "error";
       job.error = result.error || "Claude Code 执行失败。";
@@ -523,10 +607,10 @@ function startClaudeJob(message) {
   return job;
 }
 
-async function appendActivity(text) {
+async function appendActivity(text, companyId) {
   const state = await loadState();
-  state.activity.unshift({ id: id("log"), time: nowLabel(), text });
-  state.activity = state.activity.slice(0, 12);
+  const workspace = workspaceForSession(state, { companyId });
+  pushActivity(workspace, text);
   await saveState(state);
   return state;
 }
@@ -578,11 +662,13 @@ async function handleApi(req, res) {
       });
       return;
     }
+    const workspace = workspaceForSession(state, session);
     sendJson(res, 200, {
       ok: true,
       loggedIn: true,
       owner: state.owner,
-      company: state.company,
+      company: workspace.company,
+      companies: companyList(state, workspace.company.id),
     });
     return;
   }
@@ -601,13 +687,17 @@ async function handleApi(req, res) {
     state.owner.name = String(body.name || state.owner.name || "老板").trim().slice(0, 24);
     state.owner.phone = String(body.phone || body.email || "").trim().slice(0, 80);
     state.owner.lastLoginAt = nowLabel();
-    pushActivity(state, `${state.owner.name}进入了公司经营看板。`);
+    const loginWorkspace =
+      state.companies.find((workspace) => workspace.company.id === body.companyId) ||
+      workspaceForSession(state, { companyId: state.activeCompanyId });
+    pushActivity(loginWorkspace, `${state.owner.name}进入了公司经营看板。`);
+    state.activeCompanyId = loginWorkspace.company.id;
     await saveState(state);
     const token = `${randomUUID()}${randomUUID()}`;
     const sessions = await loadSessions();
     sessions[token] = {
       ownerName: state.owner.name,
-      companyId: state.company.id,
+      companyId: loginWorkspace.company.id,
       createdAt: Date.now(),
       expiresAt: Date.now() + SESSION_TTL_MS,
     };
@@ -615,8 +705,8 @@ async function handleApi(req, res) {
     res.setHeader("Set-Cookie", sessionCookie(token, Math.floor(SESSION_TTL_MS / 1000)));
     sendJson(res, 200, {
       ok: true,
-      redirectTo: `/dashboard/${state.company.slug}`,
-      dashboard: publicDashboard(state),
+      redirectTo: `/dashboard/${loginWorkspace.company.slug}`,
+      dashboard: publicDashboard(state, { companyId: loginWorkspace.company.id }),
     });
     return;
   }
@@ -638,93 +728,144 @@ async function handleApi(req, res) {
 
   if (url.pathname === "/api/dashboard" && req.method === "GET") {
     const state = await loadState();
-    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state) });
+    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state, session) });
     return;
   }
 
   if (url.pathname === "/api/company" && req.method === "PATCH") {
     const body = await readJsonBody(req);
     const state = await loadState();
-    const previousName = state.company.name;
-    state.company.name = cleanText(body.name, state.company.name, 40);
-    state.company.industry = cleanText(body.industry, state.company.industry, 80);
-    state.company.website = cleanText(body.website, state.company.website, 120);
-    state.company.slogan = cleanText(body.slogan, state.company.slogan, 120);
-    state.company.mood = body.mode === "new"
-      ? `新公司“${state.company.name}”已建好，AI员工开始整理经营事项。`
-      : `公司资料已更新，AI员工会按新的主营业务继续推进。`;
-    if (body.mode === "new" && previousName !== state.company.name) {
-      state.inbox = {
+    let workspace = workspaceForSession(state, session);
+    const companyName = cleanText(body.name, workspace.company.name, 40);
+    if (body.mode === "new") {
+      const newCompanyId = id("company");
+      const slug = `company-${newCompanyId.replace(/^company_/, "")}`;
+      workspace = normalizeWorkspace({
+        ...workspaceFromLegacy(defaultState()),
+        company: {
+          id: newCompanyId,
+          slug,
+          name: companyName,
+          industry: cleanText(body.industry, "请补充主营业务", 80),
+          website: cleanText(body.website, "", 120),
+          slogan: cleanText(body.slogan, "AI会先整理公司介绍、客户画像、获客话术和收款准备清单", 120),
+          mood: `新公司“${companyName}”已建好，AI员工开始整理经营事项。`,
+        },
+      });
+      workspace.inbox = {
         title: "新公司看板已建好",
-        body: `当前公司已切换为${state.company.name}。建议先补齐主营业务、客户来源和收款方式。`,
+        body: `当前公司已切换为${companyName}。建议先补齐主营业务、客户来源和收款方式。`,
       };
-      state.tasks.unshift({
+      workspace.tasks.unshift({
         id: id("task"),
-        title: `为${state.company.name}补齐第一批经营资料`,
+        title: `为${companyName}补齐第一批经营资料`,
         body: "AI会先整理公司介绍、客户画像、获客话术和收款准备清单。",
         owner: "总经理AI",
         status: "AI新建议",
         priority: "今天",
         nextStep: "老板确认后，AI继续生成可直接使用的材料。",
       });
-      state.tasks = state.tasks.slice(0, 8);
+      workspace.tasks = workspace.tasks.slice(0, 8);
+      pushActivity(workspace, `老板新建并进入公司：${companyName}。`);
+      state.companies.push(workspace);
+      state.activeCompanyId = workspace.company.id;
+      await updateSessionCompany(session, workspace.company.id);
+      await saveState(state);
+      sendJson(res, 200, {
+        ok: true,
+        redirectTo: `/dashboard/${workspace.company.slug}`,
+        dashboard: publicDashboard(state, { companyId: workspace.company.id }),
+      });
+      return;
     }
-    pushActivity(state, body.mode === "new" ? `老板新建并进入公司：${state.company.name}。` : `老板更新了公司资料：${state.company.name}。`);
+    workspace.company.name = companyName;
+    workspace.company.industry = cleanText(body.industry, workspace.company.industry, 80);
+    workspace.company.website = cleanText(body.website, workspace.company.website, 120);
+    workspace.company.slogan = cleanText(body.slogan, workspace.company.slogan, 120);
+    workspace.company.mood =
+      body.mode === "new"
+      ? `新公司“${workspace.company.name}”已建好，AI员工开始整理经营事项。`
+      : `公司资料已更新，AI员工会按新的主营业务继续推进。`;
+    pushActivity(workspace, `老板更新了公司资料：${workspace.company.name}。`);
     await saveState(state);
-    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state) });
+    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state, session) });
+    return;
+  }
+
+  if (url.pathname === "/api/company/switch" && req.method === "POST") {
+    const body = await readJsonBody(req);
+    const state = await loadState();
+    const workspace = state.companies.find((item) => item.company.id === body.companyId);
+    if (!workspace) {
+      sendJson(res, 404, { ok: false, error: "没有找到这家公司。" });
+      return;
+    }
+    state.activeCompanyId = workspace.company.id;
+    pushActivity(workspace, `老板切换到公司：${workspace.company.name}。`);
+    await updateSessionCompany(session, workspace.company.id);
+    await saveState(state);
+    sendJson(res, 200, {
+      ok: true,
+      redirectTo: `/dashboard/${workspace.company.slug}`,
+      dashboard: publicDashboard(state, { companyId: workspace.company.id }),
+    });
     return;
   }
 
   if (url.pathname === "/api/owner" && req.method === "PATCH") {
     const body = await readJsonBody(req);
     const state = await loadState();
+    const workspace = workspaceForSession(state, session);
     state.owner.name = cleanText(body.name, state.owner.name, 24);
     state.owner.phone = cleanText(body.phone || body.email, state.owner.phone, 80);
     state.owner.reportTime = cleanText(body.reportTime, state.owner.reportTime || "每天上午9点", 40);
-    pushActivity(state, `${state.owner.name}更新了老板资料和汇报时间。`);
+    pushActivity(workspace, `${state.owner.name}更新了老板资料和汇报时间。`);
     await saveState(state);
-    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state) });
+    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state, session) });
     return;
   }
 
   if (url.pathname === "/api/billing/top-up" && req.method === "POST") {
     const body = await readJsonBody(req);
     const state = await loadState();
+    const workspace = workspaceForSession(state, session);
     const amount = Math.max(10, Math.min(9999, Number(body.amount) || 100));
-    const budget = state.metrics.find((item) => item.label === "本月预算");
+    const budget = workspace.metrics.find((item) => item.label === "本月预算");
     if (budget) {
-      budget.value = `¥${currentBudget(state) + amount}`;
+      budget.value = `¥${currentBudget(workspace) + amount}`;
       budget.hint = "已增加可用次数";
     }
-    pushActivity(state, `老板给AI员工充值了¥${amount}预算。`);
-    state.inbox = {
+    pushActivity(workspace, `老板给AI员工充值了¥${amount}预算。`);
+    workspace.inbox = {
       title: "充值已记录",
       body: `本月AI经营预算已增加¥${amount}。后续可以继续让AI整理客户、文案和报告。`,
     };
     await saveState(state);
-    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state) });
+    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state, session) });
     return;
   }
 
   if (url.pathname === "/api/plan/upgrade" && req.method === "POST") {
     const state = await loadState();
-    const budget = state.metrics.find((item) => item.label === "本月预算");
+    const workspace = workspaceForSession(state, session);
+    const budget = workspace.metrics.find((item) => item.label === "本月预算");
     if (budget) budget.hint = "专业版试用中";
-    state.company.mood = "专业版已开通试用，AI员工可以同时推进客户、资料、官网和收款准备。";
-    state.inbox = {
+    workspace.company.mood = "专业版已开通试用，AI员工可以同时推进客户、资料、官网和收款准备。";
+    workspace.inbox = {
       title: "专业版试用已开通",
       body: "现在可以让AI一次性整理更多客户名单、销售话术、官网内容和老板日报。",
     };
-    pushActivity(state, "老板开通了专业版试用。");
+    pushActivity(workspace, "老板开通了专业版试用。");
     await saveState(state);
-    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state) });
+    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state, session) });
     return;
   }
 
   const channelMatch = url.pathname.match(/^\/api\/channels\/([^/]+)$/);
   if (channelMatch && req.method === "PATCH") {
     const state = await loadState();
-    const channel = state.channels.find((item) => item.id === channelMatch[1]);
+    const workspace = workspaceForSession(state, session);
+    const channel = workspace.channels.find((item) => item.id === channelMatch[1]);
     if (!channel) {
       sendJson(res, 404, { ok: false, error: "没有找到这个渠道。" });
       return;
@@ -732,46 +873,47 @@ async function handleApi(req, res) {
     if (channel.id === "channel_wechat") {
       channel.status = "草稿已生成，待老板复制发送";
       channel.action = "重新生成草稿";
-      state.socialDraft.status = "已准备，等待老板确认发送";
-      state.inbox = {
+      workspace.socialDraft.status = "已准备，等待老板确认发送";
+      workspace.inbox = {
         title: "微信草稿已准备好",
         body: "建议先发给最近合作过的老客户，语气以回访为主，不要硬推销。",
       };
     } else if (channel.id === "channel_site") {
       channel.status = "官网绑定资料已列好";
       channel.action = "查看资料";
-      state.documents.unshift({ id: id("doc_site"), title: "官网绑定资料清单", type: "官网资料", age: "刚刚" });
-      state.documents = state.documents.slice(0, 8);
-      state.inbox = {
+      workspace.documents.unshift({ id: id("doc_site"), title: "官网绑定资料清单", type: "官网资料", age: "刚刚" });
+      workspace.documents = workspace.documents.slice(0, 8);
+      workspace.inbox = {
         title: "官网绑定资料已列好",
         body: "需要准备域名、公司介绍、联系电话和服务范围。老板确认后再对外发布。",
       };
     } else if (channel.id === "channel_pay") {
       channel.status = "收款清单已准备";
       channel.action = "查看清单";
-      state.documents.unshift({ id: id("doc_pay"), title: "收款开通清单", type: "财务资料", age: "刚刚" });
-      state.documents = state.documents.slice(0, 8);
-      state.inbox = {
+      workspace.documents.unshift({ id: id("doc_pay"), title: "收款开通清单", type: "财务资料", age: "刚刚" });
+      workspace.documents = workspace.documents.slice(0, 8);
+      workspace.inbox = {
         title: "收款开通清单已准备",
         body: "AI已列出微信、支付宝和对公收款分别需要准备的材料。",
       };
     }
-    pushActivity(state, `老板处理了渠道：${channel.name}。`);
+    pushActivity(workspace, `老板处理了渠道：${channel.name}。`);
     await saveState(state);
-    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state), channel });
+    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state, session), channel });
     return;
   }
 
   if (url.pathname === "/api/social/prepare" && req.method === "POST") {
     const state = await loadState();
-    state.socialDraft.status = "已准备，等待老板确认发送";
-    state.inbox = {
+    const workspace = workspaceForSession(state, session);
+    workspace.socialDraft.status = "已准备，等待老板确认发送";
+    workspace.inbox = {
       title: "对外发布草稿已准备好",
       body: "草稿可以先复制给员工检查，确认无误后再发给客户或朋友圈。",
     };
-    pushActivity(state, "AI已准备对外发布草稿，等待老板最终确认。");
+    pushActivity(workspace, "AI已准备对外发布草稿，等待老板最终确认。");
     await saveState(state);
-    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state) });
+    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state, session) });
     return;
   }
 
@@ -779,7 +921,8 @@ async function handleApi(req, res) {
   if (taskMatch && req.method === "PATCH") {
     const body = await readJsonBody(req);
     const state = await loadState();
-    const task = state.tasks.find((item) => item.id === taskMatch[1]);
+    const workspace = workspaceForSession(state, session);
+    const task = workspace.tasks.find((item) => item.id === taskMatch[1]);
     if (!task) {
       sendJson(res, 404, { ok: false, error: "没有找到这件事。" });
       return;
@@ -788,27 +931,25 @@ async function handleApi(req, res) {
     if (action === "confirm") task.status = "老板已同意";
     if (action === "pause") task.status = "已暂缓";
     if (action === "claude" || action === "codex") task.status = "已交给Claude处理";
-    state.activity.unshift({
-      id: id("log"),
-      time: nowLabel(),
-      text:
-        action === "pause"
-          ? `老板决定先不做：${task.title}。`
-          : action === "claude" || action === "codex"
-            ? `老板把任务交给Claude Code：${task.title}。`
-            : `老板同意继续推进：${task.title}。`,
-    });
-    state.activity = state.activity.slice(0, 12);
+    pushActivity(
+      workspace,
+      action === "pause"
+        ? `老板决定先不做：${task.title}。`
+        : action === "claude" || action === "codex"
+          ? `老板把任务交给Claude Code：${task.title}。`
+          : `老板同意继续推进：${task.title}。`,
+    );
     await saveState(state);
-    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state), task });
+    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state, session), task });
     return;
   }
 
   if (url.pathname === "/api/agents/run-cycle" && req.method === "POST") {
     const state = await loadState();
-    state.cycleCount += 1;
-    const rotation = state.cycleCount % state.agents.length;
-    state.agents = state.agents.map((agent, index) => ({
+    const workspace = workspaceForSession(state, session);
+    workspace.cycleCount += 1;
+    const rotation = workspace.cycleCount % workspace.agents.length;
+    workspace.agents = workspace.agents.map((agent, index) => ({
       ...agent,
       progress: Math.min(96, agent.progress + (index === rotation ? 9 : 3)),
       status:
@@ -822,8 +963,8 @@ async function handleApi(req, res) {
       ["整理本周员工安排", "AI会把销售、售后、库房三类工作列清楚。", "总经理AI"],
       ["准备收款开通清单", "AI会列出微信、支付宝、对公收款分别需要哪些资料。", "财务AI"],
     ];
-    const [title, body, owner] = suggestions[state.cycleCount % suggestions.length];
-    state.tasks.unshift({
+    const [title, body, owner] = suggestions[workspace.cycleCount % suggestions.length];
+    workspace.tasks.unshift({
       id: id("task"),
       title,
       body,
@@ -832,12 +973,11 @@ async function handleApi(req, res) {
       priority: "今天",
       nextStep: "老板点同意后，AI继续整理成可执行材料。",
     });
-    state.tasks = state.tasks.slice(0, 8);
-    state.activity.unshift({ id: id("log"), time: nowLabel(), text: `AI员工完成一轮检查：${title}。` });
-    state.activity = state.activity.slice(0, 12);
-    state.metrics[1].value = `${7 + state.cycleCount}件`;
+    workspace.tasks = workspace.tasks.slice(0, 8);
+    pushActivity(workspace, `AI员工完成一轮检查：${title}。`);
+    workspace.metrics[1].value = `${7 + workspace.cycleCount}件`;
     await saveState(state);
-    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state) });
+    sendJson(res, 200, { ok: true, dashboard: publicDashboard(state, session) });
     return;
   }
 
@@ -855,7 +995,7 @@ async function handleApi(req, res) {
         sendJson(res, 400, { ok: false, error: validationError });
         return;
       }
-      const job = startClaudeJob(message);
+      const job = startClaudeJob(message, session.companyId);
       sendJson(res, 202, serializeClaudeJob(job));
     } catch (error) {
       sendJson(res, 500, {
@@ -893,20 +1033,21 @@ async function handleApi(req, res) {
         return;
       }
       if (url.pathname === "/api/claude" && req.headers["x-qxb-sync"] !== "1") {
-        const job = startClaudeJob(message);
+        const job = startClaudeJob(message, session.companyId);
         sendJson(res, 202, serializeClaudeJob(job));
         return;
       }
-      let state = await loadState();
-      const result = await runClaude(message, state);
+      const state = await loadState();
+      const workspace = workspaceForSession(state, session);
+      const result = await runClaude(message, workspace);
       if (result.ok) {
-        state = await appendActivity(`Claude Code已完成老板指令：${message.slice(0, 32)}。`);
-        state.inbox = {
+        pushActivity(workspace, `Claude Code已完成老板指令：${message.slice(0, 32)}。`);
+        workspace.inbox = {
           title: "Claude Code 已返回结果",
           body: result.output.slice(0, 220),
         };
         await saveState(state);
-        result.dashboard = publicDashboard(state);
+        result.dashboard = publicDashboard(state, session);
       }
       sendJson(res, result.ok ? 200 : 500, result);
     } catch (error) {
@@ -938,13 +1079,25 @@ async function serveStatic(req, res) {
       res.end();
       return;
     }
+    const state = await loadState();
+    const workspace = workspaceForSession(state, session);
+    const requestedSlug = url.pathname === "/dashboard" ? "" : url.pathname.split("/").pop();
+    if (requestedSlug && requestedSlug !== workspace.company.slug) {
+      res.writeHead(302, {
+        location: `/dashboard/${workspace.company.slug || "fitscope"}`,
+        "cache-control": "no-store",
+      });
+      res.end();
+      return;
+    }
   }
   if (url.pathname === "/login") {
     const session = await getSession(req);
     if (session) {
       const state = await loadState();
+      const workspace = workspaceForSession(state, session);
       res.writeHead(302, {
-        location: `/dashboard/${state.company.slug || "fitscope"}`,
+        location: `/dashboard/${workspace.company.slug || "fitscope"}`,
         "cache-control": "no-store",
       });
       res.end();
