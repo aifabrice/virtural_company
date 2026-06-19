@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/virtual_company
-ExecStart=/usr/bin/node /opt/virtual_company/server.js
+ExecStart=/usr/bin/node /opt/virtual_company/backend/server.js
 Restart=always
 RestartSec=3
 Environment=NODE_ENV=production

@@ -6,8 +6,10 @@ const { randomUUID } = require("node:crypto");
 const { spawn, execFileSync } = require("node:child_process");
 
 const PORT = Number(process.env.PORT || 5176);
-const ROOT = __dirname;
-const DATA_DIR = path.join(ROOT, ".data");
+const BACKEND_DIR = __dirname;
+const PROJECT_ROOT = path.resolve(BACKEND_DIR, "..");
+const FRONTEND_DIR = process.env.FRONTEND_DIR || path.join(PROJECT_ROOT, "frontend");
+const DATA_DIR = process.env.DATA_DIR || path.join(PROJECT_ROOT, ".data");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
 const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
 const MAX_BODY = 24 * 1024;
@@ -312,7 +314,7 @@ function runClaude(message, state) {
     let stderr = "";
     let finished = false;
     const child = spawn(CLAUDE_BIN, args, {
-      cwd: ROOT,
+      cwd: PROJECT_ROOT,
       env: claudeEnv(),
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -671,8 +673,8 @@ async function serveStatic(req, res) {
     : routeToIndex(url.pathname)
       ? "/index.html"
       : decodeURIComponent(url.pathname);
-  const filePath = path.normalize(path.join(ROOT, requested));
-  const relative = path.relative(ROOT, filePath);
+  const filePath = path.normalize(path.join(FRONTEND_DIR, requested));
+  const relative = path.relative(FRONTEND_DIR, filePath);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
     res.writeHead(403);
     res.end("Forbidden");

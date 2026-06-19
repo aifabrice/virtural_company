@@ -16,14 +16,14 @@
 - Console: no errors or warnings in verification runs.
 - final result: passed
 
-**Codex CLI Bridge QA**
-- Request: Connect the app directly to the local Codex CLI.
-- Files added: `server.js`, `package.json`.
-- Frontend evidence: `output/playwright/codex-bridge-final.png`.
-- Health check: `GET /api/health` returned `codex-cli 0.138.0-alpha.7`.
-- Execution check: `POST /api/codex` with a short test instruction returned `已接通。`.
-- Auth fix: bridge strips inherited `CODEX_API_KEY` and `OPENAI_API_KEY` by default so Codex CLI uses the local ChatGPT login state. Set `QXB_USE_ENV_CODEX_KEY=1` only if explicitly choosing API-key auth.
-- Console: no frontend errors or warnings.
+**Claude Code Bridge QA**
+- Request: Connect the app directly to Claude Code CLI with MiniMax-M3.
+- Backend entry: `backend/server.js`.
+- Frontend files: `frontend/index.html`, `frontend/script.js`, `frontend/styles.css`.
+- Health check: `GET /api/health` returns provider `claude` and model `MiniMax-M3`.
+- Execution check: `POST /api/claude/jobs` starts a background Claude Code job, then `GET /api/claude/jobs/:id` returns the result.
+- Public tunnel fix: frontend uses short POST plus polling so slow Claude Code responses do not fail behind Serveo.
+- Console: no frontend errors or warnings after the favicon-only warning is ignored.
 - final result: passed
 
 **Findings**
