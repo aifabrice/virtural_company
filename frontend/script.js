@@ -207,6 +207,14 @@ let conversationMessages = [];
 let conversationCompanyId = "";
 let authMode = "login";
 let companyCreationBusy = false;
+let creationMotion = {
+  jobId: "",
+  companyName: "",
+  events: [],
+  tick: 0,
+  lastEventAt: 0,
+  lastStepId: "",
+};
 const compactViewport = window.matchMedia("(max-width: 980px)");
 
 function needsCompanySetup(data = dashboardState) {
@@ -932,45 +940,192 @@ function closeModal() {
   modalCopyText = "";
 }
 
+const creationStageMeta = {
+  profile: {
+    title: "建立公司经营工程",
+    detail: "正在写入公司档案、创建独立工作区，并把老板资料和企业资料分开保存。",
+    lane: "档案",
+  },
+  research: {
+    title: "查资料与找线索",
+    detail: "正在整理行业资料、客户画像、竞品压力和第一批可执行线索。",
+    lane: "资料",
+  },
+  market: {
+    title: "形成经营判断",
+    detail: "正在把外部资料压缩成客户分层、切入口、风险和下一步动作。",
+    lane: "判断",
+  },
+  departments: {
+    title: "组建AI管理层",
+    detail: "正在分配总经理、销售、市场、运营和财务角色，让它们各自接手任务。",
+    lane: "组织",
+  },
+  plan: {
+    title: "制定90天打法",
+    detail: "正在生成经营节奏、销售话术、资料清单和老板需要拍板的事项。",
+    lane: "计划",
+  },
+  tasks: {
+    title: "生成今日经营队列",
+    detail: "正在把计划拆成今天能看的任务、报告和资料草稿。",
+    lane: "任务",
+  },
+  finalize: {
+    title: "保存并进入看板",
+    detail: "正在保存企业工作区，准备切换到新公司的经营看板。",
+    lane: "上线",
+  },
+};
+
+const creationEventCopy = {
+  profile: ["创建独立工作区", "写入公司基础档案", "绑定当前老板账号", "建立资料目录"],
+  research: ["检索行业关键词", "整理客户画像", "筛选可触达渠道", "扫描竞品和替代方案", "提炼资料来源"],
+  market: ["压缩经营判断", "标记优先客户", "识别成交阻力", "生成第一批机会点"],
+  departments: ["安排总经理AI", "分配销售AI职责", "建立财务提醒", "同步运营节奏"],
+  plan: ["生成90天计划", "拆解销售打法", "整理老板决策清单", "准备对外介绍"],
+  tasks: ["生成今日待确认事项", "写经营简报", "整理资料草稿", "刷新任务优先级"],
+  finalize: ["保存看板数据", "检查账号隔离", "准备进入新公司", "收尾执行记录"],
+};
+
+function resetCreationMotion(companyName = "") {
+  creationMotion = {
+    jobId: "",
+    companyName,
+    events: [],
+    tick: 0,
+    lastEventAt: 0,
+    lastStepId: "",
+  };
+}
+
+function creationStepId(job, steps) {
+  return job.activeStep || steps.find((step) => step.status === "running")?.id || steps.find((step) => step.status !== "done")?.id || "finalize";
+}
+
+function creationMessageFor(stepId) {
+  const pool = creationEventCopy[stepId] || creationEventCopy.profile;
+  const text = pool[creationMotion.tick % pool.length];
+  creationMotion.tick += 1;
+  return text;
+}
+
+function updateCreationEvents(job, stepId) {
+  const now = Date.now();
+  const jobId = job.jobId || "local-start";
+  if (creationMotion.jobId && creationMotion.jobId !== jobId) {
+    resetCreationMotion(creationMotion.companyName);
+  }
+  creationMotion.jobId = jobId;
+  if (stepId !== creationMotion.lastStepId) {
+    creationMotion.lastStepId = stepId;
+    creationMotion.lastEventAt = 0;
+  }
+  if (job.status === "done") {
+    creationMotion.events.push({ time: "完成", text: "新公司经营看板已生成，准备进入工作台。" });
+  } else if (job.status === "error") {
+    creationMotion.events.push({ time: "异常", text: job.error || "创建过程中遇到问题。" });
+  } else if (now - creationMotion.lastEventAt > 850) {
+    creationMotion.events.push({
+      time: new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date()),
+      text: creationMessageFor(stepId),
+    });
+    creationMotion.lastEventAt = now;
+  }
+  const seen = new Set();
+  creationMotion.events = creationMotion.events
+    .filter((event) => {
+      const key = `${event.time}-${event.text}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(-12);
+}
+
 function renderCompanyCreationProgress(job) {
   const steps = job.steps?.length
     ? job.steps
     : [
-        { title: "建立公司档案", detail: "正在创建公司经营入口。", status: "running" },
-        { title: "查找外部资料", detail: "等待AI员工查资料。", status: "pending" },
-        { title: "形成经营判断", detail: "等待整理客户画像和竞品。", status: "pending" },
-        { title: "组建AI管理层", detail: "等待分配职责。", status: "pending" },
-        { title: "制定90天计划", detail: "等待生成经营节奏。", status: "pending" },
-        { title: "生成今日任务", detail: "等待生成待办和资料。", status: "pending" },
-        { title: "完成经营看板", detail: "等待进入新公司。", status: "pending" },
+        { id: "profile", title: "建立公司档案", detail: "正在创建公司经营入口。", status: "running" },
+        { id: "research", title: "查找外部资料", detail: "等待AI员工查资料。", status: "pending" },
+        { id: "market", title: "形成经营判断", detail: "等待整理客户画像和竞品。", status: "pending" },
+        { id: "departments", title: "组建AI管理层", detail: "等待分配职责。", status: "pending" },
+        { id: "plan", title: "制定90天计划", detail: "等待生成经营节奏。", status: "pending" },
+        { id: "tasks", title: "生成今日任务", detail: "等待生成待办和资料。", status: "pending" },
+        { id: "finalize", title: "完成经营看板", detail: "等待进入新公司。", status: "pending" },
       ];
   const doneCount = steps.filter((step) => step.status === "done").length;
   const progress = Math.round((doneCount / Math.max(steps.length, 1)) * 100);
+  const activeStepId = creationStepId(job, steps);
+  const activeMeta = creationStageMeta[activeStepId] || creationStageMeta.profile;
+  updateCreationEvents(job, activeStepId);
   const statusText =
     job.status === "done"
       ? "新公司已经建好"
       : job.status === "error"
         ? "创建过程中遇到问题"
-        : "AI员工正在搭建新公司";
+        : `${activeMeta.title}中`;
+  const lanes = steps.map((step, index) => {
+    const meta = creationStageMeta[step.id] || { lane: step.title || "任务", title: step.title || "处理中" };
+    const state =
+      step.status === "done"
+        ? "done"
+        : step.id === activeStepId || step.status === "running"
+          ? "active"
+          : index < doneCount
+            ? "done"
+            : "pending";
+    return {
+      ...step,
+      lane: meta.lane,
+      state,
+    };
+  });
   els.modalTitle.textContent = "正在创建公司";
+  els.modalBackdrop.dataset.current = "creation";
+  els.modalBackdrop.hidden = false;
   els.modalBody.innerHTML = `<div class="creation-process">
-    <div class="creation-hero">
-      <span>${escapeHtml(statusText)}</span>
-      <strong>${job.status === "done" ? "100" : String(progress)}%</strong>
+    <div class="creation-live">
+      <div class="creation-core" aria-hidden="true">
+        <span></span>
+        <i></i>
+        <b></b>
+      </div>
+      <div class="creation-copy">
+        <span>Agent 工作现场</span>
+        <strong>${escapeHtml(statusText)}</strong>
+        <p>${escapeHtml(job.status === "done" ? "公司档案、AI管理层、今日任务和资料草稿已经保存完成。" : activeMeta.detail)}</p>
+      </div>
+      <div class="creation-meter">
+        <b>${job.status === "done" ? "100" : String(Math.max(progress, 8))}%</b>
+        <span>${job.status === "done" ? "已完成" : "持续运行"}</span>
+      </div>
     </div>
-    <div class="creation-bar" aria-hidden="true"><span style="width:${job.status === "done" ? 100 : progress}%"></span></div>
-    <div class="creation-steps">
-      ${steps
+    <div class="creation-scan" aria-hidden="true"><span style="width:${job.status === "done" ? 100 : Math.max(progress, 8)}%"></span></div>
+    <div class="creation-lanes">
+      ${lanes
         .map(
-          (step, index) => `<article class="creation-step ${escapeHtml(step.status || "pending")}">
-            <b>${index + 1}</b>
+          (step) => `<article class="creation-lane ${escapeHtml(step.state)}">
+            <b>${escapeHtml(step.lane)}</b>
             <div>
               <strong>${escapeHtml(step.title || "")}</strong>
-              <p>${escapeHtml(step.detail || "")}</p>
+              <span>${step.state === "done" ? "已完成" : step.state === "active" ? "正在处理" : "排队中"}</span>
             </div>
           </article>`,
         )
         .join("")}
+    </div>
+    <div class="creation-stream">
+      <div class="creation-stream-head">
+        <strong>实时执行流</strong>
+        <span>${escapeHtml(creationMotion.companyName || "新公司")} · ${escapeHtml(activeMeta.lane)}</span>
+      </div>
+      <div class="creation-log-list">
+        ${creationMotion.events
+          .map((event) => `<p><time>${escapeHtml(event.time)}</time><span>${escapeHtml(event.text)}</span></p>`)
+          .join("")}
+      </div>
     </div>
     ${job.error ? `<p class="creation-error">${escapeHtml(job.error)}</p>` : ""}
   </div>`;
@@ -1136,16 +1291,17 @@ async function saveCompany(form) {
     const isNewCompany = form.dataset.mode === "new";
     if (isNewCompany) {
       companyCreationBusy = true;
+      resetCreationMotion(values.name || "新公司");
       renderCompanyCreationProgress({
         status: "running",
         steps: [
-          { title: "建立公司档案", detail: "正在提交公司基础资料。", status: "running" },
-          { title: "查找外部资料", detail: "等待AI员工查资料。", status: "pending" },
-          { title: "形成经营判断", detail: "等待整理客户画像和竞品。", status: "pending" },
-          { title: "组建AI管理层", detail: "等待分配职责。", status: "pending" },
-          { title: "制定90天计划", detail: "等待生成经营节奏。", status: "pending" },
-          { title: "生成今日任务", detail: "等待生成待办和资料。", status: "pending" },
-          { title: "完成经营看板", detail: "等待进入新公司。", status: "pending" },
+          { id: "profile", title: "建立公司档案", detail: "正在提交公司基础资料。", status: "running" },
+          { id: "research", title: "查找外部资料", detail: "等待AI员工查资料。", status: "pending" },
+          { id: "market", title: "形成经营判断", detail: "等待整理客户画像和竞品。", status: "pending" },
+          { id: "departments", title: "组建AI管理层", detail: "等待分配职责。", status: "pending" },
+          { id: "plan", title: "制定90天计划", detail: "等待生成经营节奏。", status: "pending" },
+          { id: "tasks", title: "生成今日任务", detail: "等待生成待办和资料。", status: "pending" },
+          { id: "finalize", title: "完成经营看板", detail: "等待进入新公司。", status: "pending" },
         ],
       });
     }
