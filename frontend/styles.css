@@ -255,6 +255,7 @@ h1, h2 { margin: 0; line-height: 1.12; text-wrap: balance; letter-spacing: 0; }
   padding: 9px 12px;
 }
 .login-card .god-mode { width: 100%; min-height: 42px; margin-top: 18px; }
+.login-card .meta:empty { display: none; }
 
 .topbar {
   position: sticky;

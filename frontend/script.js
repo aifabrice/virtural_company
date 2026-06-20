@@ -531,7 +531,7 @@ function setAuthMode(mode) {
   els.authHint.textContent =
     authMode === "register"
       ? "注册后会自动进入当前公司，之后可在菜单里新建或切换公司。"
-      : "登录后才能访问公司看板。所有公司资料都会跟当前账号绑定。";
+      : "";
   els.authPassword.setAttribute("autocomplete", authMode === "register" ? "new-password" : "current-password");
 }
 
