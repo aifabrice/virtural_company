@@ -626,10 +626,7 @@ function setAuthMode(mode) {
   });
   els.authTitle.textContent = authMode === "register" ? "注册老板账号" : "账号登录";
   els.authSubmit.textContent = authMode === "register" ? "注册并进入" : "进入经营台";
-  els.authHint.textContent =
-    authMode === "register"
-      ? "注册后先创建自己的企业，不会进入别人的公司。"
-      : "";
+  els.authHint.textContent = "";
   els.authPassword.setAttribute("autocomplete", authMode === "register" ? "new-password" : "current-password");
 }
 
