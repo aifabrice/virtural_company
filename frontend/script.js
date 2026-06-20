@@ -249,7 +249,9 @@ function renderInlineMarkdown(value) {
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/__([^_]+)__/g, "<strong>$1</strong>")
     .replace(/\*\*/g, "")
-    .replace(/__/g, "");
+    .replace(/__/g, "")
+    .replace(/\*/g, "")
+    .replace(/(^|\s)#{1,6}\s*/g, "$1");
 }
 
 function renderMessageText(value) {
@@ -258,11 +260,37 @@ function renderMessageText(value) {
   let listType = "";
   let inCodeBlock = false;
   let codeLines = [];
+  let sectionOpen = false;
+  const sectionNames = [
+    "老板先看结论",
+    "马上行动清单",
+    "可直接复制",
+    "需要老板确认",
+    "下一步动作",
+    "竞争对手动向",
+    "行业机会",
+    "我的判断",
+    "具体动作",
+    "风险提醒",
+  ];
 
   function closeList() {
     if (!listType) return;
     html.push(`</${listType}>`);
     listType = "";
+  }
+
+  function closeSection() {
+    closeList();
+    if (!sectionOpen) return;
+    html.push("</section>");
+    sectionOpen = false;
+  }
+
+  function openSection(title) {
+    closeSection();
+    sectionOpen = true;
+    html.push(`<section class="message-section"><p class="message-heading">${renderInlineMarkdown(title)}</p>`);
   }
 
   function openList(type) {
@@ -302,16 +330,21 @@ function renderMessageText(value) {
 
     const heading = line.match(/^#{1,4}\s*(\S.+)$/);
     const boldHeading = line.match(/^\*\*(.+)\*\*$/) || line.match(/^__(.+)__$/);
+    const sectionHeading = line.match(new RegExp(`^(?:[一二三四五六七八九十]+[、.]|\\d+[、.])?\\s*(${sectionNames.join("|")})\\s*[:：]?$`));
+    const sectionWithText = line.match(new RegExp(`^(?:[一二三四五六七八九十]+[、.]|\\d+[、.])?\\s*(${sectionNames.join("|")})\\s*[:：]\\s*(.+)$`));
     const bullet = line.match(/^[-*•]\s+(.+)$/);
     const numbered = line.match(/^\d+[.、)]\s+(.+)$/);
     const quote = line.match(/^>\s+(.+)$/);
 
-    if (heading) {
-      closeList();
-      html.push(`<p class="message-heading">${renderInlineMarkdown(heading[1])}</p>`);
+    if (sectionWithText) {
+      openSection(sectionWithText[1]);
+      html.push(`<p>${renderInlineMarkdown(sectionWithText[2])}</p>`);
+    } else if (sectionHeading) {
+      openSection(sectionHeading[1]);
+    } else if (heading) {
+      openSection(heading[1]);
     } else if (boldHeading) {
-      closeList();
-      html.push(`<p class="message-heading">${renderInlineMarkdown(boldHeading[1])}</p>`);
+      openSection(boldHeading[1]);
     } else if (bullet) {
       openList("ul");
       html.push(`<li>${renderInlineMarkdown(bullet[1])}</li>`);
@@ -327,7 +360,7 @@ function renderMessageText(value) {
     }
   }
 
-  closeList();
+  closeSection();
   if (inCodeBlock && codeLines.length) flushCode();
   return html.join("");
 }
@@ -711,24 +744,24 @@ function quickActionsForCompany(company) {
   if (kind === "investment") {
     return [
       ["找项目源", "帮我找20个可能适合投资或合作的项目来源渠道"],
-      ["写跟进消息", "帮我写一条发给项目方或合作伙伴的跟进消息"],
-      ["做投资方案", "帮我做一份投资合作介绍和筛选标准"],
+      ["看竞争", "帮我监控同类投资机构和替代方案的动向，给我一份本周应对报告"],
+      ["看机会", "帮我观察投资行业的发展机会，告诉我这家公司本周应该抓什么"],
       ["安排尽调", "帮我把今天项目筛选、尽调和跟进工作列出来"],
     ];
   }
   if (kind === "trade") {
     return [
       ["找采购客户", "帮我找16个可能采购公司产品的客户"],
-      ["写询价回复", "帮我写一条发给采购客户的报价跟进消息"],
+      ["看竞争", "帮我监控同行批发商、代理商和线上供应链平台的动向，给我本周应对报告"],
+      ["看机会", "帮我观察贸易和供应链行业的发展机会，告诉我本周该抓什么"],
       ["做报价单", "帮我做一份产品报价和交付说明"],
-      ["安排发货", "帮我把今天报价、发货和回款工作列出来"],
     ];
   }
   return [
     ["找10个客户", "帮我找10个适合公司业务的潜在客户"],
-    ["写跟进消息", "帮我写一条客户跟进消息"],
+    ["看竞争", "帮我监控竞争对手和替代方案的动向，给我本周应对报告"],
+    ["看机会", "帮我观察整个行业的发展机会，告诉我这家公司本周应该抓什么"],
     ["做方案报价", "帮我做一份服务方案和报价"],
-    ["安排员工", "帮我把今天员工要做的事列出来"],
   ];
 }
 
@@ -779,6 +812,60 @@ function ownerForm() {
 function documentText(doc) {
   const company = displayCompany();
   const kind = companyKind(company);
+  if (doc.id.includes("competitor_watch")) {
+    const targets =
+      kind === "investment"
+        ? ["本地财务顾问机构", "产业基金平台", "券商投行团队"]
+        : kind === "trade"
+          ? ["同城批发商", "区域代理商", "线上供应链平台"]
+          : kind === "industrial"
+            ? ["本地维修服务商", "设备原厂售后", "备件经销商"]
+            : ["同城同行商家", "线上平台服务商", "老客户转介绍团队"];
+    return `${company.name}竞争对手动向报告
+
+老板先看结论
+不要急着跟竞争对手打价格战。先把客户为什么选我们、我们能承诺什么、销售怎么跟进讲清楚。
+
+本周重点观察
+1. ${targets[0]}：看它怎么获客、怎么报价、怎么承诺交付。
+   我们动作：把自己的报价边界、响应速度和案例准备好。
+2. ${targets[1]}：看它是否在扩大渠道、打包服务或压低价格。
+   我们动作：把客户分层，不要把好客户和低价客户混在一起跟。
+3. ${targets[2]}：看它是否用线上内容或标准套餐抢客户。
+   我们动作：准备一页对外介绍，让销售可以当天发给客户。
+
+马上行动清单
+1. 销售跟进客户时记录客户提到的竞品、价格、交期、顾虑。
+2. 资料负责人把公司优势写成一页纸，只写能做到的内容。
+3. 老板每周看一次竞品压力，决定调报价、补案例，还是换客户。`;
+  }
+  if (doc.id.includes("industry_opportunity")) {
+    const opportunity =
+      kind === "investment"
+        ? "项目方更需要资金、产业资源和融资节奏判断"
+        : kind === "trade"
+          ? "客户更在意稳定供货、清楚报价和确定交付"
+          : kind === "industrial"
+            ? "客户更希望减少停机、降低维修不确定性"
+            : "客户更愿意选择能把方案、价格、交付说清楚的服务商";
+    return `${company.name}行业机会报告
+
+老板先看结论
+行业机会不能只看趋势，要落到本周能验证的动作：找哪类客户、讲什么话、谁负责、几天看结果。
+
+值得抓的机会
+1. ${opportunity}
+   本周动作：选3到5个客户验证需求，记录他们最关心的问题。
+2. 把主营业务做成一页清楚介绍
+   本周动作：写清服务/产品、适合谁、价格或合作方式、下一步怎么联系。
+3. 建立固定复盘
+   本周动作：每天记录客户反馈，每周看一次哪些话术、报价、渠道最有效。
+
+需要老板确认
+1. 先选一个机会做一周验证。
+2. 指定销售或AI负责资料和跟进记录。
+3. 约定复盘标准：多少客户回复、多少客户愿意继续聊、卡点是什么。`;
+  }
   if (doc.id.includes("leads")) {
     if (kind === "investment") {
       return `${company.name}项目来源清单\n1. FA和财务顾问渠道\n2. 券商、律所、会计师事务所\n3. 产业园和创业服务机构\n4. 老合作伙伴转介绍\n建议话术：先说明关注方向和项目阶段，再约一次简短沟通。`;

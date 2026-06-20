@@ -683,7 +683,7 @@ h2 {
   padding: 12px;
 }
 .message {
-  width: min(100%, 340px);
+  width: min(100%, 420px);
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fffaf0;
@@ -697,6 +697,7 @@ h2 {
 }
 .message.agent {
   justify-self: start;
+  width: min(100%, 520px);
   background: var(--surface-2);
 }
 .message.pending {
@@ -731,13 +732,25 @@ h2 {
 .message-body > * + * {
   margin-top: 7px;
 }
+.message-section {
+  border-left: 3px solid rgba(222, 92, 38, 0.58);
+  padding-left: 10px;
+}
+.message-section + .message-section {
+  margin-top: 10px;
+  padding-top: 2px;
+}
 .message-body .message-heading {
   color: var(--ink);
   font-size: 15px;
   font-weight: 900;
+  margin-bottom: 5px;
 }
 .message.user .message-body .message-heading {
   color: white;
+}
+.message.user .message-section {
+  border-left-color: rgba(255, 247, 232, 0.42);
 }
 .message-body ul,
 .message-body ol {

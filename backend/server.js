@@ -481,6 +481,8 @@ function profileForCompany(company) {
       ],
       documents: [
         ["doc_report", "今日投资跟进简报", "老板报告", "刚刚"],
+        ["doc_competitor_watch", "竞争对手动向报告", "竞品报告", "刚刚"],
+        ["doc_industry_opportunity", "行业机会报告", "机会报告", "刚刚"],
         ["doc_leads", "项目来源清单", "项目名单", "3分钟前"],
         ["doc_website", "投资合作介绍草稿", "对外资料", "8分钟前"],
       ],
@@ -518,6 +520,8 @@ function profileForCompany(company) {
       ],
       documents: [
         ["doc_report", "今日贸易跟进简报", "老板报告", "刚刚"],
+        ["doc_competitor_watch", "竞争对手动向报告", "竞品报告", "刚刚"],
+        ["doc_industry_opportunity", "行业机会报告", "机会报告", "刚刚"],
         ["doc_leads", "采购客户名单", "销售名单", "3分钟前"],
         ["doc_website", "产品报价介绍草稿", "对外资料", "8分钟前"],
       ],
@@ -555,6 +559,8 @@ function profileForCompany(company) {
     ],
     documents: [
       ["doc_report", "今日经营简报", "老板报告", "刚刚"],
+      ["doc_competitor_watch", "竞争对手动向报告", "竞品报告", "刚刚"],
+      ["doc_industry_opportunity", "行业机会报告", "机会报告", "刚刚"],
       ["doc_leads", "客户线索清单", "销售名单", "3分钟前"],
       ["doc_website", "对外介绍草稿", "对外资料", "8分钟前"],
     ],
@@ -588,7 +594,7 @@ function workspaceTemplateForCompany(input, options = {}) {
   company.slogan = company.slogan || profile.defaultSlogan;
   company.mood = profile.mood;
   const budgetValue = options.budgetValue || "¥480";
-  return {
+  return ensureStrategicReportDocuments({
     company,
     metrics: [
       { label: "今日待确认", value: "3件", hint: "只看要老板拍板的事" },
@@ -646,7 +652,7 @@ function workspaceTemplateForCompany(input, options = {}) {
       createdAt: options.createdAt || Date.now(),
       updatedAt: Date.now(),
     },
-  };
+  });
 }
 
 function agentWorkspaceRoot(companyId) {
@@ -721,6 +727,31 @@ function operatingBacklog(workspace) {
   }));
 }
 
+const strategicReportDocuments = [
+  ["doc_competitor_watch", "竞争对手动向报告", "竞品报告", "刚刚"],
+  ["doc_industry_opportunity", "行业机会报告", "机会报告", "刚刚"],
+];
+
+function ensureStrategicReportDocuments(workspace) {
+  if (!workspace?.company) return workspace;
+  const current = Array.isArray(workspace.documents) ? workspace.documents : [];
+  const missing = strategicReportDocuments
+    .filter(([suffix]) => !current.some((doc) => String(doc.id || "").includes(suffix)))
+    .map(([suffix, title, type, age]) => ({
+      id: `${workspace.company.id}_${suffix}`,
+      title,
+      type,
+      age,
+    }));
+  if (!missing.length) {
+    workspace.documents = current;
+    return workspace;
+  }
+  const [first, ...rest] = current;
+  workspace.documents = first ? [first, ...missing, ...rest].slice(0, 10) : [...missing].slice(0, 10);
+  return workspace;
+}
+
 function extractJsonObject(text) {
   const raw = String(text || "").trim();
   if (!raw) return null;
@@ -781,6 +812,21 @@ function defaultResearchPack(workspace, aiNotes = "") {
     "是否确认对外介绍和第一版销售话术",
     "是否需要设置收款方式、报价口径或预算上限",
   ];
+  const competitorMoves = competitors.map((name, index) => ({
+    competitor: name,
+    recentMove: index === 0 ? "重点观察它最近怎么获客、怎么报价、怎么承诺交付。" : index === 1 ? "重点观察它是否在扩大渠道、打包服务或降低价格。" : "重点观察它是否用线上内容、标准套餐或合作伙伴抢客户。",
+    impact: index === 0 ? "可能抢走本地关系客户和着急成交的客户。" : index === 1 ? "可能把客户预期拉到更低价格或更全服务。" : "可能让客户先在线上比价，再压低我们的成交空间。",
+    ownerAction: "本周先把我们的客户画像、报价口径、交付承诺和跟进节奏写清楚，销售对外只讲能兑现的三件事。",
+    watchSignal: "如果客户频繁问价格、交期、案例或是否能马上响应，说明竞品压力已经传到一线。",
+  }));
+  const industryOpportunities = researchThemes.slice(0, 4).map((theme, index) => ({
+    opportunity: `${theme}带来的经营机会`,
+    whyNow: index === 0 ? "新公司刚建立，越早定清楚方向，后面获客和资料越不会乱。" : "客户越来越希望供应商/服务商给出清楚方案、价格、周期和结果承诺。",
+    fitForCompany: `${company.name}可以先把“${theme}”做成一张清单、一页介绍或一套话术，降低老板和员工的沟通成本。`,
+    actionThisWeek: index === 0 ? "老板先确认优先级，AI当天整理成可执行清单。" : "安排AI补资料、销售试跟进、老板看结果后决定是否扩大投入。",
+    resourcesNeeded: "需要老板确认主推业务、客户类型、预算上限和是否允许员工对外试沟通。",
+    risk: "不要同时铺太多方向，先用一周验证最容易成交或最能带来资源的一条线。",
+  }));
   return {
     generatedBy: aiNotes ? "ai_agent_with_research_prompt" : "internal_manager_framework",
     rawNotes: aiNotes,
@@ -797,6 +843,8 @@ function defaultResearchPack(workspace, aiNotes = "") {
       pressure: index === 0 ? "本地关系和响应速度" : index === 1 ? "资源覆盖和价格体系" : "线上获客和标准化服务",
       counterMove: "用更清楚的客户画像、报价口径和跟进节奏提高成交确定性。",
     })),
+    competitorMoves,
+    industryOpportunities,
     customerSegments: customerSegments.map(([name, profile, firstMove]) => ({ name, profile, firstMove })),
     operatingPlan90d: [
       { phase: "第1-7天", goal: "建档和验证方向", actions: ["确认主营业务", "整理客户画像", "生成对外介绍", "列出第一批可跟进名单"] },
@@ -823,6 +871,16 @@ function researchPack(workspace, aiNotes = "") {
     sources: asArray(parsed.sources).length ? parsed.sources : fallback.sources,
     marketInsights: asArray(parsed.marketInsights).length ? parsed.marketInsights : fallback.marketInsights,
     competitors: asArray(parsed.competitors).length ? parsed.competitors : fallback.competitors,
+    competitorMoves: asArray(parsed.competitorMoves).length
+      ? parsed.competitorMoves
+      : asArray(parsed.competitorReports).length
+        ? parsed.competitorReports
+        : fallback.competitorMoves,
+    industryOpportunities: asArray(parsed.industryOpportunities).length
+      ? parsed.industryOpportunities
+      : asArray(parsed.opportunityReports).length
+        ? parsed.opportunityReports
+        : fallback.industryOpportunities,
     customerSegments: asArray(parsed.customerSegments).length ? parsed.customerSegments : fallback.customerSegments,
     operatingPlan90d: asArray(parsed.operatingPlan90d).length ? parsed.operatingPlan90d : fallback.operatingPlan90d,
     salesPlaybook: parsed.salesPlaybook || fallback.salesPlaybook,
@@ -844,6 +902,76 @@ function marketResearchMarkdown(workspace, pack) {
     ...pack.sources.map((item, index) => `${index + 1}. ${item.title || "来源"}${item.url ? ` - ${item.url}` : ""}\n   - ${item.summary || item.type || "待核验"}`),
     "",
     pack.rawNotes ? `## AI研究原文\n${pack.rawNotes}` : "",
+    "",
+  ].join("\n");
+}
+
+function competitorWatchReportMarkdown(workspace, pack) {
+  const company = workspace.company;
+  const moves = asArray(pack.competitorMoves).length
+    ? pack.competitorMoves
+    : asArray(pack.competitors).map((item) => ({
+        competitor: item.name,
+        recentMove: item.pressure,
+        impact: item.pressure,
+        ownerAction: item.counterMove,
+        watchSignal: "让销售在客户沟通中记录价格、交付、案例和响应速度四类问题。",
+      }));
+  return [
+    `# ${company.name}竞争对手动向报告`,
+    "",
+    "## 给老板的结论",
+    `${company.name}现在不需要盲目跟竞品打价格战，先把“客户为什么选我们、我们能保证什么、销售下一步怎么跟”讲清楚。竞品监控的目的不是看热闹，而是指导本周获客、报价和交付动作。`,
+    "",
+    "## 本周重点观察",
+    ...moves.map((item, index) => [
+      `${index + 1}. ${item.competitor || item.name || "竞品/替代方案"}`,
+      `   - 可能动作：${item.recentMove || item.move || "观察它的获客、报价、交付和案例变化。"}`,
+      `   - 对我们的影响：${item.impact || item.pressure || "可能影响客户预期和成交速度。"}`,
+      `   - 老板本周动作：${item.ownerAction || item.counterMove || "确认我们自己的客户优先级、报价边界和跟进节奏。"}`,
+      `   - 一线观察信号：${item.watchSignal || "客户是否反复询价、要求案例、比较交期或压缩付款条件。"}`,
+    ].join("\n")),
+    "",
+    "## 可以立刻安排员工做的事",
+    "1. 销售每次跟进客户时记录：客户提到的竞品、价格、交付周期、顾虑。",
+    "2. 资料负责人把公司优势写成一页纸，只写客户能听懂、公司能做到的内容。",
+    "3. 老板每周看一次竞品压力，决定是调整报价、补案例，还是换一批更合适的客户。",
+    "",
+  ].join("\n");
+}
+
+function industryOpportunityReportMarkdown(workspace, pack) {
+  const company = workspace.company;
+  const opportunities = asArray(pack.industryOpportunities).length
+    ? pack.industryOpportunities
+    : asArray(pack.marketInsights).map((item) => ({
+        opportunity: item.theme || item.title,
+        whyNow: item.insight || item.summary,
+        fitForCompany: item.insight || item.summary,
+        actionThisWeek: item.action || item.nextStep,
+        resourcesNeeded: "老板确认优先级、预算和负责人。",
+        risk: "先小范围验证，不要一次铺太多方向。",
+      }));
+  return [
+    `# ${company.name}行业机会报告`,
+    "",
+    "## 给老板的结论",
+    `行业机会要落到${company.name}本周能做的经营动作上：先找最容易验证的一条线，明确客户是谁、先讲什么、谁负责、几天看结果。`,
+    "",
+    "## 值得抓的机会",
+    ...opportunities.map((item, index) => [
+      `${index + 1}. ${item.opportunity || item.theme || "经营机会"}`,
+      `   - 为什么现在值得看：${item.whyNow || item.insight || "客户需求正在变化，需要更清楚的方案和响应。"}`,
+      `   - 跟公司怎么结合：${item.fitForCompany || "先结合主营业务做成可销售、可交付、可复盘的小动作。"}`,
+      `   - 本周动作：${item.actionThisWeek || item.action || "先整理清单，找3到5个客户验证。"}`,
+      `   - 需要资源：${item.resourcesNeeded || "老板确认负责人、预算和优先级。"}`,
+      `   - 风险提醒：${item.risk || "不要只看概念，必须用客户反馈验证。"}`,
+    ].join("\n")),
+    "",
+    "## 老板今天要拍板",
+    "1. 先选一个机会做一周验证。",
+    "2. 指定一个员工或AI角色负责整理资料和跟进记录。",
+    "3. 约定复盘标准：有多少客户回复、多少客户愿意继续聊、卡点是什么。",
     "",
   ].join("\n");
 }
@@ -903,7 +1031,11 @@ async function materializeAgentWorkspace(workspace, owner, options = {}) {
   await writeAgentWorkspaceFile(root, "sources.json", jsonBlock({ version: 1, generatedAt, sources: pack.sources }));
   await writeAgentWorkspaceFile(root, "research/market_research.md", marketResearchMarkdown(workspace, pack));
   await writeAgentWorkspaceFile(root, "research/competitors.json", jsonBlock({ version: 1, generatedAt, competitors: pack.competitors }));
+  await writeAgentWorkspaceFile(root, "research/competitor_moves.json", jsonBlock({ version: 1, generatedAt, competitorMoves: pack.competitorMoves }));
+  await writeAgentWorkspaceFile(root, "research/industry_opportunities.json", jsonBlock({ version: 1, generatedAt, industryOpportunities: pack.industryOpportunities }));
   await writeAgentWorkspaceFile(root, "research/customer_segments.json", jsonBlock({ version: 1, generatedAt, customerSegments: pack.customerSegments }));
+  await writeAgentWorkspaceFile(root, "reports/competitor_watch_report.md", competitorWatchReportMarkdown(workspace, pack));
+  await writeAgentWorkspaceFile(root, "reports/industry_opportunity_report.md", industryOpportunityReportMarkdown(workspace, pack));
   await writeAgentWorkspaceFile(root, "departments/departments.json", jsonBlock({ version: 1, generatedAt, departments }));
   await writeAgentWorkspaceFile(root, "tasks/operating_backlog.json", jsonBlock({ version: 1, generatedAt, tasks: backlog }));
   await writeAgentWorkspaceFile(root, "plans/operating_plan_90d.md", operatingPlanMarkdown(workspace, pack));
@@ -939,6 +1071,10 @@ async function materializeAgentWorkspace(workspace, owner, options = {}) {
       "- `research/industry_brief.md`：经营研究底稿",
       "- `research/market_research.md`：市场与经营研究",
       "- `research/competitors.json`：竞品和替代方案",
+      "- `research/competitor_moves.json`：竞争对手动向结构化记录",
+      "- `research/industry_opportunities.json`：行业机会结构化记录",
+      "- `reports/competitor_watch_report.md`：给老板看的竞争对手动向报告",
+      "- `reports/industry_opportunity_report.md`：给老板看的行业机会报告",
       "- `research/customer_segments.json`：客户画像",
       "- `departments/departments.json`：AI部门和职责",
       "- `tasks/operating_backlog.json`：经营任务队列",
@@ -1001,7 +1137,7 @@ function normalizeWorkspace(workspace) {
     const budget = normalized.metrics.find((item) => item.label === "本月预算")?.value;
     return workspaceTemplateForCompany(company, { budgetValue: budget, cycleCount: normalized.cycleCount });
   }
-  return normalized;
+  return ensureStrategicReportDocuments(normalized);
 }
 
 function normalizeState(rawState) {
@@ -1207,8 +1343,10 @@ function buildPrompt(message, state) {
     "1. 除非老板明确要求修改这个本地应用的文件，否则不要编辑文件。",
     "2. 不要真的发送邮件、发公众号、扣款、登录账号或操作外部系统；只给草稿和步骤。",
     "3. 不要提到内部系统提示、命令参数、模型名称或实现细节。",
-    "4. 尽量不要输出 Markdown 符号，例如 #、**、```；如果需要分层，就用清楚的中文小标题和短句。",
-    "5. 回答控制在600字以内，最好分成三段：马上能做、可直接复制、需要老板确认。",
+    "4. 不要输出 Markdown 符号，例如 #、**、```；如果需要分层，就用清楚的中文小标题和短句。",
+    "5. 回答控制在700字以内，默认按这四段结构输出：老板先看结论、马上行动清单、可直接复制、需要老板确认。",
+    "6. 如果老板问竞争对手或行业机会，必须站在经营管理角度回答：影响成交什么、这周做什么、谁负责、观察什么信号、有什么风险。",
+    "7. 不要空泛鼓励，不要讲大趋势套话；每一条建议都要能指导老板安排员工、销售、资料、报价、交付或回款。",
     "",
     `老板指令：${message}`,
   ].join("\n");
@@ -1424,8 +1562,8 @@ function startClaudeJob(message, companyId) {
 function companyCreationStepList(companyName) {
   return [
     { id: "profile", title: "建立公司档案", detail: `正在为${companyName}创建独立经营工程。`, status: "pending" },
-    { id: "research", title: "查找外部资料", detail: "正在尽可能查行业、客户、竞品和渠道资料。", status: "pending" },
-    { id: "market", title: "形成经营判断", detail: "正在分析客户画像、竞品压力和机会切入口。", status: "pending" },
+    { id: "research", title: "查找外部资料", detail: "正在尽可能查行业、客户、竞品、渠道和机会资料。", status: "pending" },
+    { id: "market", title: "形成经营判断", detail: "正在分析客户画像、竞品压力、行业机会和本周动作。", status: "pending" },
     { id: "departments", title: "组建AI管理层", detail: "正在安排总经理、市场、销售、运营、财务职责。", status: "pending" },
     { id: "plan", title: "制定90天计划", detail: "正在生成销售打法、经营节奏和老板决策清单。", status: "pending" },
     { id: "tasks", title: "生成今日任务", detail: "正在生成老板今天要看的事项、资料和待办。", status: "pending" },
@@ -1477,6 +1615,8 @@ async function runCompanyResearchAgent(workspace) {
   const prompt = [
     "你是企小帮的职业经理人团队，正在为老板创建一家新的虚拟公司经营工程。",
     "必须优先加载并遵循 web-access skill。你需要尽可能获取外部资料：行业信息、客户群、竞品/替代方案、销售渠道、政策或风险。",
+    "你不是写泛泛的市场分析，而是在帮真实企业老板做经营管理。每个判断都必须能落到本周动作：谁去做、先做什么、看什么信号、老板要拍什么板。",
+    "报告对象是传统企业或创业公司老板，答案要打到经营痛点：客户、成交、报价、交付、回款、渠道、竞品压力、行业机会。",
     "如果当前环境无法联网或 web-access 不可用，也要用职业经理人的经营框架产出可执行研究，并在 sources 中明确标记为待外部核验，不要伪造 URL。",
     "",
     "公司基础信息：",
@@ -1491,6 +1631,8 @@ async function runCompanyResearchAgent(workspace) {
     '  "sources": [{"title": "资料标题", "url": "https://...", "type": "official|media|industry|search|internal_framework", "summary": "为什么有用"}],',
     '  "marketInsights": [{"theme": "市场/客户/渠道/风险主题", "insight": "职业经理人的判断", "action": "下一步动作"}],',
     '  "competitors": [{"name": "竞品或替代方案", "pressure": "它会带来的竞争压力", "counterMove": "我们怎么应对"}],',
+    '  "competitorMoves": [{"competitor": "竞争对手/替代方案", "recentMove": "最近值得监控的动作", "impact": "对本公司的经营影响", "ownerAction": "老板本周应该安排的动作", "watchSignal": "一线员工要观察的信号"}],',
+    '  "industryOpportunities": [{"opportunity": "行业机会", "whyNow": "为什么现在值得看", "fitForCompany": "跟本公司怎么结合", "actionThisWeek": "本周可执行动作", "resourcesNeeded": "需要老板准备的人/钱/资料", "risk": "风险提醒"}],',
     '  "customerSegments": [{"name": "客户分层", "profile": "客户画像", "firstMove": "第一步跟进动作"}],',
     '  "operatingPlan90d": [{"phase": "第1-7天", "goal": "阶段目标", "actions": ["动作1", "动作2"]}],',
     '  "salesPlaybook": {"opening": "第一句话怎么说", "qualification": ["先问什么"], "followUp": ["怎么跟进"]},',
@@ -1535,7 +1677,7 @@ function startCompanyCreationJob({ companyId, companyName, companySlug, sessionS
     await delay(700);
 
     updateCompanyCreationStep(job, "profile", "done", "公司档案已建立。");
-    updateCompanyCreationStep(job, "research", "running", "正在让AI员工尽可能查找外部资料、客户群、竞品和渠道。");
+    updateCompanyCreationStep(job, "research", "running", "正在让AI员工尽可能查找外部资料、客户群、竞品、渠道和行业机会。");
     workspace.meta.creationStatus = "researching";
     let aiNotes = "";
     try {
@@ -1547,19 +1689,19 @@ function startCompanyCreationJob({ companyId, companyName, companySlug, sessionS
     workspace.activity.unshift({
       id: id("log"),
       time: nowLabel(),
-      text: aiNotes ? "AI已完成外部资料调研和经营研究底稿。" : "AI已按职业经理人框架生成第一版经营研究底稿。",
+      text: aiNotes ? "AI已完成外部资料调研、竞品监控和行业机会底稿。" : "AI已按职业经理人框架生成第一版竞品与行业机会底稿。",
     });
     workspace.activity = workspace.activity.slice(0, 12);
     await materializeAgentWorkspace(workspace, owner, { aiNotes, researchPack: managerPack });
     await saveState(state);
     await delay(700);
 
-    updateCompanyCreationStep(job, "research", "done", "外部资料和经营研究底稿已生成。");
-    updateCompanyCreationStep(job, "market", "running", "正在分析客户画像、竞品压力、销售切入口和经营风险。");
+    updateCompanyCreationStep(job, "research", "done", "外部资料、竞品监控和行业机会底稿已生成。");
+    updateCompanyCreationStep(job, "market", "running", "正在分析客户画像、竞品压力、行业机会、销售切入口和经营风险。");
     workspace.meta.creationStatus = "analyzing_market";
     workspace.inbox = {
       title: "经营研究已完成",
-      body: `AI已经为${workspace.company.name}整理了资料来源、客户画像、竞品压力和第一版销售切入口。下一步会组建AI管理层。`,
+      body: `AI已经为${workspace.company.name}整理了资料来源、客户画像、竞争对手动向、行业机会和第一版销售切入口。下一步会组建AI管理层。`,
     };
     await materializeAgentWorkspace(workspace, owner, { aiNotes, researchPack: managerPack });
     await saveState(state);
@@ -1609,7 +1751,7 @@ function startCompanyCreationJob({ companyId, companyName, companySlug, sessionS
     }));
     workspace.inbox = {
       title: "新公司经营工程已创建",
-      body: `AI已经为${workspace.company.name}建立公司档案、资料来源、市场研究、客户画像、AI管理层、90天计划、经营任务和今日简报。老板现在可以先看三件待确认事项。`,
+      body: `AI已经为${workspace.company.name}建立公司档案、资料来源、竞争对手动向报告、行业机会报告、客户画像、AI管理层、90天计划、经营任务和今日简报。老板现在可以先看三件待确认事项。`,
     };
     await materializeAgentWorkspace(workspace, owner, { aiNotes, researchPack: managerPack });
     await saveState(state);
