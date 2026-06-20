@@ -85,6 +85,51 @@ const fallbackDashboard = {
   updatedAt: "本地演示",
 };
 
+const setupDashboard = {
+  requiresCompany: true,
+  needsCompany: true,
+  owner: {
+    name: "老板",
+    phone: "",
+    reportTime: "每天上午9点",
+  },
+  company: null,
+  companies: [],
+  metrics: [
+    { label: "企业档案", value: "待创建", hint: "先建立第一家公司" },
+    { label: "AI员工", value: "待组建", hint: "创建后自动安排" },
+    { label: "经营任务", value: "待生成", hint: "按企业业务生成" },
+    { label: "资料目录", value: "待建立", hint: "每家公司独立保存" },
+  ],
+  agents: [],
+  tasks: [
+    {
+      id: "setup_company",
+      title: "创建自己的企业",
+      body: "新账号不会看到别人的公司。先填公司名称和主营业务，AI会为这家公司单独建立经营看板。",
+      owner: "AI经营助手",
+      status: "待老板填写",
+      priority: "今天",
+      nextStep: "点顶部“新建公司”，创建后直接进入自己的公司看板。",
+    },
+  ],
+  documents: [],
+  channels: [],
+  activity: [
+    { id: "setup_log", time: "刚刚", text: "老板账号已准备好，等待创建第一家公司。" },
+  ],
+  inbox: {
+    title: "先创建自己的企业",
+    body: "当前账号还没有绑定公司。创建企业后，资料、任务、AI员工和后续结果都会绑定到这个账号下。",
+  },
+  socialDraft: {
+    title: "等待公司资料",
+    body: "创建企业后，AI会按主营业务生成对外介绍和客户跟进内容。",
+    status: "待创建",
+  },
+  updatedAt: "等待创建",
+};
+
 const terminalLines = [
   "> 老板经营入口已准备",
   "> 正在检查本地AI经营系统...",
@@ -163,6 +208,23 @@ let conversationCompanyId = "";
 let authMode = "login";
 let companyCreationBusy = false;
 const compactViewport = window.matchMedia("(max-width: 980px)");
+
+function needsCompanySetup(data = dashboardState) {
+  return Boolean(data?.requiresCompany || data?.needsCompany || !data?.company);
+}
+
+function displayCompany(data = dashboardState) {
+  if (!needsCompanySetup(data) && data?.company) return data.company;
+  return {
+    id: "",
+    slug: "setup",
+    name: "创建企业",
+    industry: "还没有绑定企业",
+    website: "",
+    slogan: "",
+    mood: "先创建自己的企业，AI会为这家公司建立独立经营看板。",
+  };
+}
 
 function escapeHtml(value) {
   return String(value)
@@ -309,7 +371,10 @@ function toast(message) {
 }
 
 function conversationGreeting() {
-  const company = dashboardState.company || fallbackDashboard.company;
+  if (needsCompanySetup()) {
+    return "老板，当前账号还没有企业。先点“新建公司”，填公司名称和主营业务，我会为这家公司单独建立经营看板、AI员工和今日任务。";
+  }
+  const company = displayCompany();
   const tasks = dashboardState.tasks || [];
   const firstTask = tasks[0]?.title ? `今天建议先看：${tasks[0].title}。` : "今天我会先整理最要紧的经营事项。";
   const kind = companyKind(company);
@@ -402,10 +467,20 @@ function setDashboardView(view) {
 }
 
 function renderDashboard(data) {
-  dashboardState = data || fallbackDashboard;
-  const { company, metrics, agents, tasks, documents, channels, activity, socialDraft, updatedAt } = dashboardState;
-  if (company?.id && conversationCompanyId !== company.id) {
-    conversationCompanyId = company.id;
+  dashboardState = data || setupDashboard;
+  const setupMode = needsCompanySetup(dashboardState);
+  const company = displayCompany(dashboardState);
+  const metrics = dashboardState.metrics || [];
+  const agents = dashboardState.agents || [];
+  const tasks = dashboardState.tasks || [];
+  const documents = dashboardState.documents || [];
+  const channels = dashboardState.channels || [];
+  const activity = dashboardState.activity || [];
+  const socialDraft = dashboardState.socialDraft || setupDashboard.socialDraft;
+  const updatedAt = dashboardState.updatedAt;
+  const activeConversationId = setupMode ? "setup" : company.id;
+  if (activeConversationId && conversationCompanyId !== activeConversationId) {
+    conversationCompanyId = activeConversationId;
     conversationMessages = [];
   }
 
@@ -415,10 +490,12 @@ function renderDashboard(data) {
     topbarBrand.href = `/dashboard/${company.slug || "fitscope"}`;
     topbarBrand.setAttribute("aria-label", `${company.name || "公司"}经营看板`);
   }
-  document.querySelector(".brand > span").textContent = company.name || "顺达机械";
-  els.companyName.textContent = company.name || "顺达机械";
-  els.companyMood.textContent = company.mood || "AI员工正在替公司推进今天的经营任务";
+  document.body.classList.toggle("needs-company", setupMode);
+  document.querySelector(".brand > span").textContent = company.name || "创建企业";
+  els.companyName.textContent = company.name || "创建企业";
+  els.companyMood.textContent = company.mood || "先创建自己的企业，AI会为这家公司建立独立经营看板。";
   els.updatedAt.textContent = `更新：${updatedAt || "刚刚"}`;
+  els.runCycleButton.textContent = setupMode ? "创建企业" : "让AI继续干活";
   updateQuickActions(company);
 
   els.metricGrid.innerHTML = metrics
@@ -436,9 +513,10 @@ function renderDashboard(data) {
     .map((task) => `<li><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(task.nextStep || task.body)}</span></li>`)
     .join("");
 
-  els.agentList.innerHTML = agents
-    .map(
-      (agent) => `<article class="agent-card">
+  els.agentList.innerHTML = agents.length
+    ? agents
+      .map(
+        (agent) => `<article class="agent-card">
         <div>
           <strong>${escapeHtml(agent.role)}</strong>
           <span>${escapeHtml(agent.plainRole)}</span>
@@ -448,12 +526,28 @@ function renderDashboard(data) {
           <span style="width:${Math.max(0, Math.min(100, Number(agent.progress) || 0))}%"></span>
         </div>
       </article>`,
-    )
-    .join("");
+      )
+      .join("")
+    : `<article class="agent-card setup-card">
+        <div>
+          <strong>等待组建AI管理层</strong>
+          <span>创建企业后自动生成</span>
+        </div>
+        <p>系统会按主营业务安排总经理、销售、市场、运营和财务角色。</p>
+      </article>`;
 
-  els.taskList.innerHTML = tasks
-    .map(
-      (task) => `<article class="task-card" data-task="${escapeHtml(task.id)}" tabindex="0">
+  els.taskList.innerHTML = setupMode
+    ? `<article class="task-card setup-card" tabindex="0">
+        <div class="task-top">
+          <strong>创建自己的企业</strong>
+          <span class="tag urgent">今天</span>
+        </div>
+        <p>新账号不会进入别人的公司。填好企业名称和主营业务后，AI会建立独立经营看板。</p>
+        <div class="task-actions"><button type="button" data-modal="newCompany">新建公司</button></div>
+      </article>`
+    : tasks
+      .map(
+        (task) => `<article class="task-card" data-task="${escapeHtml(task.id)}" tabindex="0">
         <div class="task-top">
           <strong>${escapeHtml(task.title)}</strong>
           <span class="tag ${task.priority === "今天" ? "urgent" : ""}">${escapeHtml(task.priority)}</span>
@@ -469,33 +563,37 @@ function renderDashboard(data) {
           <button type="button" data-task-choice="pause" data-task-id="${escapeHtml(task.id)}">先不做</button>
         </div>
       </article>`,
-    )
-    .join("");
+      )
+      .join("");
 
-  els.docList.innerHTML = documents
-    .map(
-      (doc) => `<button class="doc-button" type="button" data-doc="${escapeHtml(doc.id)}">
+  els.docList.innerHTML = documents.length
+    ? documents
+      .map(
+        (doc) => `<button class="doc-button" type="button" data-doc="${escapeHtml(doc.id)}">
         <span class="doc-icon">${escapeHtml(doc.type.slice(0, 2))}</span>
         <span>${escapeHtml(doc.title)}</span>
         <span class="meta">${escapeHtml(doc.age)}</span>
       </button>`,
-    )
-    .join("");
+      )
+      .join("")
+    : `<article class="soft-card compact"><strong>资料待生成</strong><p>创建企业后，AI会生成公司档案、销售打法、90天计划和今日简报。</p></article>`;
 
-  els.channelList.innerHTML = channels
-    .map(
-      (channel) => `<article class="channel-card">
+  els.channelList.innerHTML = channels.length
+    ? channels
+      .map(
+        (channel) => `<article class="channel-card">
         <strong>${escapeHtml(channel.name)}</strong>
         <span>${escapeHtml(channel.status)}</span>
         <button class="bevel" type="button" data-channel-action="${escapeHtml(channel.id)}">${escapeHtml(channel.action)}</button>
       </article>`,
-    )
-    .join("");
+      )
+      .join("")
+    : `<article class="channel-card"><strong>获客渠道待建立</strong><span>创建企业后按业务生成</span><button class="bevel" type="button" data-modal="newCompany">新建公司</button></article>`;
 
   els.socialDraft.innerHTML = `<p><strong>${escapeHtml(socialDraft.title)}</strong></p>
     <p>${escapeHtml(socialDraft.body)}</p>
     <p class="meta">${escapeHtml(socialDraft.status)}</p>
-    <button class="bevel" type="button" data-action="tweet">准备发布</button>`;
+    <button class="bevel" type="button" ${setupMode ? 'data-modal="newCompany"' : 'data-action="tweet"'}>${setupMode ? "新建公司" : "准备发布"}</button>`;
 
   els.activityList.innerHTML = activity
     .map((item) => `<article class="activity-item"><span>${escapeHtml(item.time)}</span><p>${escapeHtml(item.text)}</p></article>`)
@@ -530,7 +628,7 @@ function setAuthMode(mode) {
   els.authSubmit.textContent = authMode === "register" ? "注册并进入" : "进入经营台";
   els.authHint.textContent =
     authMode === "register"
-      ? "注册后会自动进入当前公司，之后可在菜单里新建或切换公司。"
+      ? "注册后先创建自己的企业，不会进入别人的公司。"
       : "";
   els.authPassword.setAttribute("autocomplete", authMode === "register" ? "new-password" : "current-password");
 }
@@ -566,7 +664,12 @@ async function submitAuth() {
     renderDashboard(data.dashboard);
     history.replaceState(null, "", data.redirectTo || "/dashboard/fitscope");
     pushLog(authMode === "register" ? "> 老板账号已创建并进入经营台" : "> 老板已登录公司经营台");
-    toast(authMode === "register" ? "注册成功" : "登录成功");
+    if (needsCompanySetup(data.dashboard)) {
+      toast(authMode === "register" ? "注册成功，请创建自己的企业" : "请先创建自己的企业");
+      window.setTimeout(() => openModal("newCompany"), 120);
+    } else {
+      toast(authMode === "register" ? "注册成功" : "登录成功");
+    }
     await checkAIBridge();
     startPassiveLogs();
   } catch (error) {
@@ -591,6 +694,14 @@ function companyKind(company) {
 }
 
 function quickActionsForCompany(company) {
+  if (needsCompanySetup()) {
+    return [
+      ["创建企业", "我想创建自己的企业"],
+      ["填公司资料", "我需要填写公司名称和主营业务"],
+      ["看创建流程", "告诉我创建企业后会生成什么"],
+      ["准备资料", "我应该先准备哪些企业资料"],
+    ];
+  }
   const kind = companyKind(company);
   if (kind === "investment") {
     return [
@@ -635,7 +746,7 @@ function setModal(title, bodyHtml, key = "") {
 }
 
 function companyForm(mode) {
-  const company = dashboardState.company || fallbackDashboard.company;
+  const company = needsCompanySetup() ? displayCompany() : dashboardState.company || fallbackDashboard.company;
   const isNew = mode === "new";
   return `<form class="modal-form" data-form="company" data-mode="${isNew ? "new" : "settings"}">
     <label>公司名称<input name="name" value="${escapeHtml(isNew ? "" : company.name || "")}" placeholder="例如：顺为投资" required /></label>
@@ -661,7 +772,7 @@ function ownerForm() {
 }
 
 function documentText(doc) {
-  const company = dashboardState.company || fallbackDashboard.company;
+  const company = displayCompany();
   const kind = companyKind(company);
   if (doc.id.includes("leads")) {
     if (kind === "investment") {
@@ -696,6 +807,10 @@ function documentText(doc) {
 function openModal(key, detail) {
   modalCopyText = "";
   if (key === "manageTasks") {
+    if (needsCompanySetup()) {
+      setModal("先创建企业", `<p>当前账号还没有企业。创建后，AI会自动生成今天要看的事项。</p>${companyForm("new")}`, "newCompany");
+      return;
+    }
     const tasks = dashboardState.tasks || [];
     setModal(
       "查看全部",
@@ -725,6 +840,10 @@ function openModal(key, detail) {
     return;
   }
   if (key === "companySettings") {
+    if (needsCompanySetup()) {
+      setModal("先创建企业", `<p>当前账号还没有企业。先创建企业后，才能修改公司设置。</p>${companyForm("new")}`, "newCompany");
+      return;
+    }
     setModal("公司设置", `<p>改完后，看板、报告和AI提示都会按新资料更新。</p>${companyForm("settings")}`, key);
     return;
   }
@@ -757,16 +876,16 @@ function openModal(key, detail) {
     return;
   }
   if (key === "companies") {
-    const company = dashboardState.company || fallbackDashboard.company;
     const companies = dashboardState.companies?.length
       ? dashboardState.companies
-      : [{ ...company, isActive: true }];
+      : [];
     setModal(
       "我的公司",
-      `<div class="modal-list">
-        ${companies
-          .map(
-            (item) => `<article class="modal-item company-switch-item ${item.isActive ? "active-company" : ""}">
+      `${companies.length
+        ? `<div class="modal-list">
+          ${companies
+            .map(
+              (item) => `<article class="modal-item company-switch-item ${item.isActive ? "active-company" : ""}">
               <div>
                 <strong>${escapeHtml(item.name)}</strong>
                 <p>${escapeHtml(item.industry || "未填写主营业务")}</p>
@@ -776,11 +895,12 @@ function openModal(key, detail) {
                 ${item.isActive ? "当前公司" : "进入"}
               </button>
             </article>`,
-          )
-          .join("")}
-      </div>
+            )
+            .join("")}
+        </div>`
+        : `<article class="modal-item company-switch-item"><div><strong>还没有企业</strong><p>创建第一家公司后，这里会显示当前账号拥有的企业。</p><span class="meta">账号之间相互隔离</span></div></article>`}
       <div class="modal-actions">
-        <button class="bevel" type="button" data-modal="companySettings">修改当前公司</button>
+        ${needsCompanySetup() ? "" : `<button class="bevel" type="button" data-modal="companySettings">修改当前公司</button>`}
         <button class="god-mode" type="button" data-modal="newCompany">新建公司</button>
       </div>`,
       key,
@@ -962,6 +1082,11 @@ async function updateTask(taskId, action) {
 }
 
 async function runCycle() {
+  if (needsCompanySetup()) {
+    openModal("newCompany");
+    toast("请先创建自己的企业");
+    return;
+  }
   els.runCycleButton.disabled = true;
   pushLog("> AI员工开始跑一轮经营检查");
   try {
@@ -971,7 +1096,7 @@ async function runCycle() {
     pushLog("> AI员工已完成一轮检查");
   } catch {
     toast("后端暂时不可用，已新增本地建议");
-    const company = dashboardState.company || fallbackDashboard.company;
+    const company = displayCompany();
     const kind = companyKind(company);
     const localIdea =
       kind === "investment"
@@ -1160,6 +1285,11 @@ async function copyModalDocument() {
 function sendMessage(value) {
   const clean = value.trim();
   if (!clean) return;
+  if (needsCompanySetup()) {
+    openModal("newCompany");
+    toast("请先创建自己的企业");
+    return;
+  }
   pushLog(`> 老板吩咐：${clean}`);
   pushLog("> AI正在整理下一步...");
   toast("已收到，AI开始处理");
@@ -1393,11 +1523,18 @@ async function init() {
       if (session.owner?.phone) els.authPhone.value = session.owner.phone;
       if (session.owner?.account) els.authAccount.value = session.owner.account;
       showProduct();
-      renderDashboard(fallbackDashboard);
+      renderDashboard(session.needsCompany ? setupDashboard : {
+        ...setupDashboard,
+        requiresCompany: false,
+        needsCompany: false,
+        company: session.company || displayCompany(),
+        companies: session.companies || [],
+      });
       await loadDashboard({ quiet: true });
       if (location.pathname === "/login") {
-        history.replaceState(null, "", `/dashboard/${session.company?.slug || "fitscope"}`);
+        history.replaceState(null, "", session.needsCompany ? "/dashboard/setup" : `/dashboard/${session.company?.slug || "fitscope"}`);
       }
+      if (session.needsCompany) window.setTimeout(() => openModal("newCompany"), 150);
       await checkAIBridge();
       startPassiveLogs();
     } else {

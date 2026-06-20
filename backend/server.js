@@ -161,10 +161,22 @@ async function loadUsers() {
   try {
     const raw = await fsp.readFile(USERS_FILE, "utf8");
     const parsed = JSON.parse(raw);
+    const normalizeUsers = (users) =>
+      Object.fromEntries(
+        Object.entries(users || {}).map(([account, user]) => [
+          account,
+          {
+            ...user,
+            account: user?.account || account,
+            companyId: user?.companyId || companyIdsForUser(user)[0] || "",
+            companyIds: companyIdsForUser(user),
+          },
+        ]),
+      );
     if (parsed?.users && typeof parsed.users === "object" && !Array.isArray(parsed.users)) {
-      return parsed.users;
+      return normalizeUsers(parsed.users);
     }
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return normalizeUsers(parsed);
     return {};
   } catch {
     return {};
@@ -181,12 +193,15 @@ async function saveUsers(users) {
 async function createSession(user, companyId) {
   const token = `${randomUUID()}${randomUUID()}`;
   const sessions = await loadSessions();
+  const ownedCompanyIds = companyIdsForUser(user);
   sessions[token] = {
     userId: user.id || "",
     userAccount: user.account || "",
     ownerName: user.name || "老板",
     ownerPhone: user.phone || "",
-    companyId,
+    ownerReportTime: user.reportTime || "",
+    companyId: companyId || "",
+    companyIds: ownedCompanyIds,
     createdAt: Date.now(),
     expiresAt: Date.now() + SESSION_TTL_MS,
   };
@@ -204,7 +219,34 @@ async function getSession(req) {
     await saveSessions(sessions);
     return null;
   }
-  return { token, ...session };
+  if (session.userAccount) {
+    const users = await loadUsers();
+    const user = users[session.userAccount];
+    if (user) {
+      const ownedCompanyIds = companyIdsForUser(user);
+      const companyId = ownedCompanyIds.includes(session.companyId)
+        ? session.companyId
+        : ownedCompanyIds.includes(user.companyId)
+          ? user.companyId
+          : ownedCompanyIds[0] || "";
+      return {
+        token,
+        ...session,
+        userId: user.id || session.userId || "",
+        ownerName: user.name || session.ownerName || "老板",
+        ownerPhone: user.phone || session.ownerPhone || "",
+        ownerReportTime: user.reportTime || session.ownerReportTime || "",
+        companyId,
+        companyIds: ownedCompanyIds,
+      };
+    }
+  }
+  return {
+    token,
+    ...session,
+    companyId: session.companyId || "",
+    companyIds: companyIdsForSession(session),
+  };
 }
 
 async function requireSession(req, res) {
@@ -218,6 +260,33 @@ function validateAccountPassword(account, password) {
   if (!account || account.length < 3 || account.length > 80) return "账号需要填写3到80个字符。";
   if (!password || String(password).length < 6) return "密码至少需要6位。";
   return "";
+}
+
+function uniqueCompanyIds(values) {
+  const ids = [];
+  for (const value of values || []) {
+    const idValue = String(value || "").trim();
+    if (idValue && !ids.includes(idValue)) ids.push(idValue);
+  }
+  return ids;
+}
+
+function companyIdsForUser(user) {
+  return uniqueCompanyIds([...(Array.isArray(user?.companyIds) ? user.companyIds : []), user?.companyId]);
+}
+
+function companyIdsForSession(session) {
+  return uniqueCompanyIds([...(Array.isArray(session?.companyIds) ? session.companyIds : []), session?.companyId]);
+}
+
+function chooseCompanyId(state, preferredCompanyId, allowedCompanyIds) {
+  const allowed = uniqueCompanyIds(allowedCompanyIds);
+  if (!allowed.length) return "";
+  const preferred = String(preferredCompanyId || "").trim();
+  if (preferred && allowed.includes(preferred) && state.companies.some((workspace) => workspace.company.id === preferred)) {
+    return preferred;
+  }
+  return allowed.find((companyId) => state.companies.some((workspace) => workspace.company.id === companyId)) || "";
 }
 
 function cleanText(value, fallback, maxLength = 80) {
@@ -974,21 +1043,24 @@ async function saveState(state) {
 }
 
 function workspaceForSession(state, session) {
-  const companyId = session?.companyId || state.activeCompanyId;
-  return (
-    state.companies.find((workspace) => workspace.company.id === companyId) ||
-    state.companies[0]
-  );
+  const allowedCompanyIds = companyIdsForSession(session);
+  if (!allowedCompanyIds.length) return null;
+  const companyId = chooseCompanyId(state, session?.companyId, allowedCompanyIds);
+  if (!companyId) return null;
+  return state.companies.find((workspace) => workspace.company.id === companyId) || null;
 }
 
-function companyList(state, activeCompanyId) {
-  return state.companies.map((workspace) => ({
-    id: workspace.company.id,
-    slug: workspace.company.slug,
-    name: workspace.company.name,
-    industry: workspace.company.industry,
-    isActive: workspace.company.id === activeCompanyId,
-  }));
+function companyList(state, activeCompanyId, session) {
+  const allowedCompanyIds = companyIdsForSession(session);
+  return state.companies
+    .filter((workspace) => allowedCompanyIds.includes(workspace.company.id))
+    .map((workspace) => ({
+      id: workspace.company.id,
+      slug: workspace.company.slug,
+      name: workspace.company.name,
+      industry: workspace.company.industry,
+      isActive: workspace.company.id === activeCompanyId,
+    }));
 }
 
 function ownerForSession(state, session) {
@@ -996,6 +1068,7 @@ function ownerForSession(state, session) {
     ...state.owner,
     name: session?.ownerName || state.owner.name || "老板",
     phone: session?.ownerPhone || state.owner.phone || "",
+    reportTime: session?.ownerReportTime || state.owner.reportTime || "每天上午9点",
     account: session?.userAccount || "",
   };
 }
@@ -1004,6 +1077,7 @@ async function updateSessionCompany(session, companyId) {
   const sessions = await loadSessions();
   if (sessions[session.token]) {
     sessions[session.token].companyId = companyId;
+    sessions[session.token].companyIds = uniqueCompanyIds([...(sessions[session.token].companyIds || []), ...companyIdsForSession(session), companyId]);
     sessions[session.token].expiresAt = Date.now() + SESSION_TTL_MS;
     await saveSessions(sessions);
   }
@@ -1011,6 +1085,7 @@ async function updateSessionCompany(session, companyId) {
     const users = await loadUsers();
     if (users[session.userAccount]) {
       users[session.userAccount].companyId = companyId;
+      users[session.userAccount].companyIds = uniqueCompanyIds([...(users[session.userAccount].companyIds || []), companyId]);
       users[session.userAccount].updatedAt = Date.now();
       await saveUsers(users);
     }
@@ -1019,9 +1094,54 @@ async function updateSessionCompany(session, companyId) {
 
 function publicDashboard(state, session) {
   const workspace = workspaceForSession(state, session);
+  if (!workspace) {
+    return {
+      requiresCompany: true,
+      needsCompany: true,
+      company: null,
+      companies: [],
+      owner: ownerForSession(state, session),
+      metrics: [
+        { label: "企业档案", value: "待创建", hint: "先建立第一家公司" },
+        { label: "AI员工", value: "待组建", hint: "创建后自动安排" },
+        { label: "经营任务", value: "待生成", hint: "按企业业务重新生成" },
+        { label: "资料目录", value: "待建立", hint: "每家公司独立保存" },
+      ],
+      agents: [],
+      tasks: [
+        {
+          id: "setup_company",
+          title: "创建自己的企业",
+          body: "新账号不会看到别人的公司。先填公司名称、主营业务和联系方式，AI会为这家公司单独建立经营看板。",
+          owner: "AI经营助手",
+          status: "待老板填写",
+          priority: "今天",
+          nextStep: "点顶部“新建公司”，创建后直接进入自己的公司看板。",
+        },
+      ],
+      documents: [],
+      channels: [],
+      activity: [
+        { id: "setup_log", time: nowLabel(), text: "老板账号已准备好，等待创建第一家公司。" },
+      ],
+      inbox: {
+        title: "先创建自己的企业",
+        body: "当前账号还没有绑定公司。创建企业后，系统会把资料、任务、AI员工和后续结果都绑定到这个账号下。",
+      },
+      socialDraft: {
+        title: "等待公司资料",
+        body: "创建企业后，AI会按主营业务生成对外介绍和客户跟进内容。",
+        status: "待创建",
+      },
+      cycleCount: 0,
+      updatedAt: nowLabel(),
+    };
+  }
   return {
+    requiresCompany: false,
+    needsCompany: false,
     company: workspace.company,
-    companies: companyList(state, workspace.company.id),
+    companies: companyList(state, workspace.company.id, session),
     owner: ownerForSession(state, session),
     metrics: workspace.metrics,
     agents: workspace.agents,
@@ -1034,6 +1154,10 @@ function publicDashboard(state, session) {
     cycleCount: workspace.cycleCount,
     updatedAt: nowLabel(),
   };
+}
+
+function sendCompanyRequired(res) {
+  sendJson(res, 409, { ok: false, needsCompany: true, error: "请先创建自己的企业，再使用这个功能。" });
 }
 
 function claudeVersion() {
@@ -1385,6 +1509,7 @@ function startCompanyCreationJob({ companyId, companyName, companySlug, sessionS
     status: "running",
     activeStep: "profile",
     companyId,
+    userAccount: sessionSnapshot?.userAccount || "",
     steps: companyCreationStepList(companyName || "新公司"),
     redirectTo: `/dashboard/${companySlug || "fitscope"}`,
     dashboard: null,
@@ -1569,9 +1694,10 @@ async function handleApi(req, res) {
     sendJson(res, 200, {
       ok: true,
       loggedIn: true,
+      needsCompany: !workspace,
       owner: ownerForSession(state, session),
-      company: workspace.company,
-      companies: companyList(state, workspace.company.id),
+      company: workspace?.company || null,
+      companies: workspace ? companyList(state, workspace.company.id, session) : [],
     });
     return;
   }
@@ -1593,7 +1719,6 @@ async function handleApi(req, res) {
     }
 
     const state = await loadState();
-    const registerWorkspace = workspaceForSession(state, { companyId: state.activeCompanyId });
     const passwordData = hashPassword(password);
     const user = {
       id: id("user"),
@@ -1602,31 +1727,29 @@ async function handleApi(req, res) {
       phone: cleanText(body.phone, "", 80),
       passwordSalt: passwordData.salt,
       passwordHash: passwordData.hash,
-      companyId: registerWorkspace.company.id,
+      companyId: "",
+      companyIds: [],
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
       updatedAt: Date.now(),
     };
 
     users[account] = user;
-    state.owner.name = user.name;
-    state.owner.phone = user.phone || account;
-    state.owner.lastLoginAt = nowLabel();
-    state.activeCompanyId = registerWorkspace.company.id;
-    pushActivity(registerWorkspace, `${user.name}注册并进入了公司经营看板。`);
     await saveUsers(users);
-    await saveState(state);
 
-    const token = await createSession(user, registerWorkspace.company.id);
+    const token = await createSession(user, "");
     res.setHeader("Set-Cookie", sessionCookie(token, Math.floor(SESSION_TTL_MS / 1000)));
     sendJson(res, 200, {
       ok: true,
-      redirectTo: `/dashboard/${registerWorkspace.company.slug}`,
+      needsCompany: true,
+      redirectTo: "/dashboard/setup",
       dashboard: publicDashboard(state, {
         userAccount: user.account,
         ownerName: user.name,
         ownerPhone: user.phone,
-        companyId: registerWorkspace.company.id,
+        ownerReportTime: user.reportTime || "",
+        companyId: "",
+        companyIds: [],
       }),
     });
     return;
@@ -1652,69 +1775,40 @@ async function handleApi(req, res) {
       }
 
       const state = await loadState();
-      const loginWorkspace =
-        state.companies.find((workspace) => workspace.company.id === user.companyId) ||
-        workspaceForSession(state, { companyId: state.activeCompanyId });
-      user.companyId = loginWorkspace.company.id;
+      const ownedCompanyIds = companyIdsForUser(user);
+      const loginCompanyId = chooseCompanyId(state, user.companyId, ownedCompanyIds);
+      const loginWorkspace = loginCompanyId
+        ? state.companies.find((workspace) => workspace.company.id === loginCompanyId)
+        : null;
+      user.companyId = loginWorkspace?.company.id || "";
+      user.companyIds = uniqueCompanyIds(ownedCompanyIds.filter((companyId) => state.companies.some((workspace) => workspace.company.id === companyId)));
       user.lastLoginAt = Date.now();
       users[account] = user;
-      state.owner.name = user.name || state.owner.name || "老板";
-      state.owner.phone = user.phone || user.account || "";
-      state.owner.lastLoginAt = nowLabel();
-      state.activeCompanyId = loginWorkspace.company.id;
-      pushActivity(loginWorkspace, `${state.owner.name}登录了公司经营看板。`);
+      if (loginWorkspace) {
+        pushActivity(loginWorkspace, `${user.name || "老板"}登录了公司经营看板。`);
+      }
       await saveUsers(users);
-      await saveState(state);
+      if (loginWorkspace) await saveState(state);
 
-      const token = await createSession(user, loginWorkspace.company.id);
+      const token = await createSession(user, user.companyId);
       res.setHeader("Set-Cookie", sessionCookie(token, Math.floor(SESSION_TTL_MS / 1000)));
       sendJson(res, 200, {
         ok: true,
-        redirectTo: `/dashboard/${loginWorkspace.company.slug}`,
+        needsCompany: !loginWorkspace,
+        redirectTo: loginWorkspace ? `/dashboard/${loginWorkspace.company.slug}` : "/dashboard/setup",
         dashboard: publicDashboard(state, {
           userAccount: user.account,
           ownerName: user.name,
           ownerPhone: user.phone,
-          companyId: loginWorkspace.company.id,
+          ownerReportTime: user.reportTime || "",
+          companyId: user.companyId,
+          companyIds: user.companyIds,
         }),
       });
       return;
     }
 
-    if (!LOGIN_CODE) {
-      sendJson(res, 503, { ok: false, error: "服务器还没有配置登录口令。" });
-      return;
-    }
-    if (String(body.code || "").trim() !== LOGIN_CODE) {
-      sendJson(res, 401, { ok: false, error: "登录口令不正确，请重新输入。" });
-      return;
-    }
-    const state = await loadState();
-    state.owner.name = String(body.name || state.owner.name || "老板").trim().slice(0, 24);
-    state.owner.phone = String(body.phone || body.email || "").trim().slice(0, 80);
-    state.owner.lastLoginAt = nowLabel();
-    const loginWorkspace =
-      state.companies.find((workspace) => workspace.company.id === body.companyId) ||
-      workspaceForSession(state, { companyId: state.activeCompanyId });
-    pushActivity(loginWorkspace, `${state.owner.name}进入了公司经营看板。`);
-    state.activeCompanyId = loginWorkspace.company.id;
-    await saveState(state);
-    const token = `${randomUUID()}${randomUUID()}`;
-    const sessions = await loadSessions();
-    sessions[token] = {
-      ownerName: state.owner.name,
-      ownerPhone: state.owner.phone,
-      companyId: loginWorkspace.company.id,
-      createdAt: Date.now(),
-      expiresAt: Date.now() + SESSION_TTL_MS,
-    };
-    await saveSessions(sessions);
-    res.setHeader("Set-Cookie", sessionCookie(token, Math.floor(SESSION_TTL_MS / 1000)));
-    sendJson(res, 200, {
-      ok: true,
-      redirectTo: `/dashboard/${loginWorkspace.company.slug}`,
-      dashboard: publicDashboard(state, { companyId: loginWorkspace.company.id }),
-    });
+    sendJson(res, 400, { ok: false, error: "请使用账号密码登录，或先注册老板账号。" });
     return;
   }
 
@@ -1743,7 +1837,7 @@ async function handleApi(req, res) {
     const body = await readJsonBody(req);
     const state = await loadState();
     let workspace = workspaceForSession(state, session);
-    const companyName = cleanText(body.name, workspace.company.name, 40);
+    const companyName = cleanText(body.name, workspace?.company?.name || "新公司", 40);
     if (body.mode === "new") {
       const newCompanyId = id("company");
       const slug = `company-${newCompanyId.replace(/^company_/, "")}`;
@@ -1759,13 +1853,14 @@ async function handleApi(req, res) {
       });
       pushActivity(workspace, `老板提交了新公司创建：${companyName}。`);
       state.companies.push(workspace);
-      state.activeCompanyId = workspace.company.id;
       await updateSessionCompany(session, workspace.company.id);
       await materializeAgentWorkspace(workspace, ownerForSession(state, session));
       await saveState(state);
+      const ownedCompanyIds = uniqueCompanyIds([...companyIdsForSession(session), workspace.company.id]);
       const sessionSnapshot = {
         ...session,
         companyId: workspace.company.id,
+        companyIds: ownedCompanyIds,
       };
       const job = startCompanyCreationJob({
         companyId: workspace.company.id,
@@ -1781,6 +1876,10 @@ async function handleApi(req, res) {
         redirectTo: `/dashboard/${workspace.company.slug}`,
         dashboard: publicDashboard(state, sessionSnapshot),
       });
+      return;
+    }
+    if (!workspace) {
+      sendJson(res, 409, { ok: false, error: "请先创建自己的企业，再修改公司资料。" });
       return;
     }
     workspace.company.name = companyName;
@@ -1801,7 +1900,7 @@ async function handleApi(req, res) {
   if (companyJobMatch && req.method === "GET") {
     cleanupCompanyCreationJobs();
     const job = companyCreationJobs.get(decodeURIComponent(companyJobMatch[1]));
-    if (!job) {
+    if (!job || (job.userAccount && job.userAccount !== session.userAccount)) {
       sendJson(res, 404, { ok: false, error: "没有找到这个公司创建任务。" });
       return;
     }
@@ -1812,19 +1911,28 @@ async function handleApi(req, res) {
   if (url.pathname === "/api/company/switch" && req.method === "POST") {
     const body = await readJsonBody(req);
     const state = await loadState();
+    const allowedCompanyIds = companyIdsForSession(session);
+    if (!allowedCompanyIds.includes(String(body.companyId || ""))) {
+      sendJson(res, 404, { ok: false, error: "没有找到这家公司，或它不属于当前账号。" });
+      return;
+    }
     const workspace = state.companies.find((item) => item.company.id === body.companyId);
     if (!workspace) {
       sendJson(res, 404, { ok: false, error: "没有找到这家公司。" });
       return;
     }
-    state.activeCompanyId = workspace.company.id;
     pushActivity(workspace, `老板切换到公司：${workspace.company.name}。`);
     await updateSessionCompany(session, workspace.company.id);
     await saveState(state);
+    const sessionSnapshot = {
+      ...session,
+      companyId: workspace.company.id,
+      companyIds: allowedCompanyIds,
+    };
     sendJson(res, 200, {
       ok: true,
       redirectTo: `/dashboard/${workspace.company.slug}`,
-      dashboard: publicDashboard(state, { companyId: workspace.company.id }),
+      dashboard: publicDashboard(state, sessionSnapshot),
     });
     return;
   }
@@ -1833,33 +1941,38 @@ async function handleApi(req, res) {
     const body = await readJsonBody(req);
     const state = await loadState();
     const workspace = workspaceForSession(state, session);
-    state.owner.name = cleanText(body.name, state.owner.name, 24);
-    state.owner.phone = cleanText(body.phone || body.email, state.owner.phone, 80);
-    state.owner.reportTime = cleanText(body.reportTime, state.owner.reportTime || "每天上午9点", 40);
+    const ownerName = cleanText(body.name, session.ownerName || state.owner.name || "老板", 24);
+    const ownerPhone = cleanText(body.phone || body.email, session.ownerPhone || state.owner.phone || "", 80);
+    const reportTime = cleanText(body.reportTime, state.owner.reportTime || "每天上午9点", 40);
     if (session.userAccount) {
       const users = await loadUsers();
       if (users[session.userAccount]) {
-        users[session.userAccount].name = state.owner.name;
-        users[session.userAccount].phone = state.owner.phone;
+        users[session.userAccount].name = ownerName;
+        users[session.userAccount].phone = ownerPhone;
+        users[session.userAccount].reportTime = reportTime;
         users[session.userAccount].updatedAt = Date.now();
         await saveUsers(users);
       }
       const sessions = await loadSessions();
       if (sessions[session.token]) {
-        sessions[session.token].ownerName = state.owner.name;
-        sessions[session.token].ownerPhone = state.owner.phone;
+        sessions[session.token].ownerName = ownerName;
+        sessions[session.token].ownerPhone = ownerPhone;
+        sessions[session.token].ownerReportTime = reportTime;
         sessions[session.token].expiresAt = Date.now() + SESSION_TTL_MS;
         await saveSessions(sessions);
       }
     }
-    pushActivity(workspace, `${state.owner.name}更新了老板资料和汇报时间。`);
-    await saveState(state);
+    if (workspace) {
+      pushActivity(workspace, `${ownerName}更新了老板资料和汇报时间。`);
+      await saveState(state);
+    }
     sendJson(res, 200, {
       ok: true,
       dashboard: publicDashboard(state, {
         ...session,
-        ownerName: state.owner.name,
-        ownerPhone: state.owner.phone,
+        ownerName,
+        ownerPhone,
+        ownerReportTime: reportTime,
       }),
     });
     return;
@@ -1869,6 +1982,10 @@ async function handleApi(req, res) {
     const body = await readJsonBody(req);
     const state = await loadState();
     const workspace = workspaceForSession(state, session);
+    if (!workspace) {
+      sendCompanyRequired(res);
+      return;
+    }
     const amount = Math.max(10, Math.min(9999, Number(body.amount) || 100));
     const budget = workspace.metrics.find((item) => item.label === "本月预算");
     if (budget) {
@@ -1888,6 +2005,10 @@ async function handleApi(req, res) {
   if (url.pathname === "/api/plan/upgrade" && req.method === "POST") {
     const state = await loadState();
     const workspace = workspaceForSession(state, session);
+    if (!workspace) {
+      sendCompanyRequired(res);
+      return;
+    }
     const budget = workspace.metrics.find((item) => item.label === "本月预算");
     if (budget) budget.hint = "专业版试用中";
     workspace.company.mood = "专业版已开通试用，AI员工可以同时推进客户、资料、官网和收款准备。";
@@ -1905,6 +2026,10 @@ async function handleApi(req, res) {
   if (channelMatch && req.method === "PATCH") {
     const state = await loadState();
     const workspace = workspaceForSession(state, session);
+    if (!workspace) {
+      sendCompanyRequired(res);
+      return;
+    }
     const channel = workspace.channels.find((item) => item.id === channelMatch[1]);
     if (!channel) {
       sendJson(res, 404, { ok: false, error: "没有找到这个渠道。" });
@@ -1946,6 +2071,10 @@ async function handleApi(req, res) {
   if (url.pathname === "/api/social/prepare" && req.method === "POST") {
     const state = await loadState();
     const workspace = workspaceForSession(state, session);
+    if (!workspace) {
+      sendCompanyRequired(res);
+      return;
+    }
     workspace.socialDraft.status = "已准备，等待老板确认发送";
     workspace.inbox = {
       title: "对外发布草稿已准备好",
@@ -1962,6 +2091,10 @@ async function handleApi(req, res) {
     const body = await readJsonBody(req);
     const state = await loadState();
     const workspace = workspaceForSession(state, session);
+    if (!workspace) {
+      sendCompanyRequired(res);
+      return;
+    }
     const task = workspace.tasks.find((item) => item.id === taskMatch[1]);
     if (!task) {
       sendJson(res, 404, { ok: false, error: "没有找到这件事。" });
@@ -1987,6 +2120,10 @@ async function handleApi(req, res) {
   if (url.pathname === "/api/agents/run-cycle" && req.method === "POST") {
     const state = await loadState();
     const workspace = workspaceForSession(state, session);
+    if (!workspace) {
+      sendCompanyRequired(res);
+      return;
+    }
     workspace.cycleCount += 1;
     const rotation = workspace.cycleCount % workspace.agents.length;
     workspace.agents = workspace.agents.map((agent, index) => ({
@@ -2030,6 +2167,12 @@ async function handleApi(req, res) {
         sendJson(res, 400, { ok: false, error: validationError });
         return;
       }
+      const state = await loadState();
+      const workspace = workspaceForSession(state, session);
+      if (!workspace) {
+        sendCompanyRequired(res);
+        return;
+      }
       const job = startClaudeJob(message, session.companyId);
       sendJson(res, 202, serializeClaudeJob(job));
     } catch (error) {
@@ -2067,13 +2210,17 @@ async function handleApi(req, res) {
         sendJson(res, 400, { ok: false, error: validationError });
         return;
       }
+      const state = await loadState();
+      const workspace = workspaceForSession(state, session);
+      if (!workspace) {
+        sendCompanyRequired(res);
+        return;
+      }
       if (url.pathname === "/api/claude" && req.headers["x-qxb-sync"] !== "1") {
         const job = startClaudeJob(message, session.companyId);
         sendJson(res, 202, serializeClaudeJob(job));
         return;
       }
-      const state = await loadState();
-      const workspace = workspaceForSession(state, session);
       const result = await runClaude(message, workspace);
       if (result.ok) {
         pushActivity(workspace, `AI员工已完成老板指令：${message.slice(0, 32)}。`);
@@ -2117,7 +2264,24 @@ async function serveStatic(req, res) {
     const state = await loadState();
     const workspace = workspaceForSession(state, session);
     const requestedSlug = url.pathname === "/dashboard" ? "" : url.pathname.split("/").pop();
-    if (requestedSlug && requestedSlug !== workspace.company.slug) {
+    if (!workspace) {
+      if (requestedSlug !== "setup") {
+        res.writeHead(302, {
+          location: "/dashboard/setup",
+          "cache-control": "no-store",
+        });
+        res.end();
+        return;
+      }
+    } else if (requestedSlug === "setup") {
+      res.writeHead(302, {
+        location: `/dashboard/${workspace.company.slug || "fitscope"}`,
+        "cache-control": "no-store",
+      });
+      res.end();
+      return;
+    }
+    if (workspace && requestedSlug && requestedSlug !== workspace.company.slug) {
       res.writeHead(302, {
         location: `/dashboard/${workspace.company.slug || "fitscope"}`,
         "cache-control": "no-store",
@@ -2132,7 +2296,7 @@ async function serveStatic(req, res) {
       const state = await loadState();
       const workspace = workspaceForSession(state, session);
       res.writeHead(302, {
-        location: `/dashboard/${workspace.company.slug || "fitscope"}`,
+        location: workspace ? `/dashboard/${workspace.company.slug || "fitscope"}` : "/dashboard/setup",
         "cache-control": "no-store",
       });
       res.end();
