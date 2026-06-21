@@ -249,6 +249,11 @@ async function getSession(req) {
     await saveSessions(sessions);
     return null;
   }
+  if (!session.userAccount) {
+    delete sessions[token];
+    await saveSessions(sessions);
+    return null;
+  }
   if (session.userAccount) {
     const users = await loadUsers();
     const user = users[session.userAccount];
@@ -271,12 +276,9 @@ async function getSession(req) {
       };
     }
   }
-  return {
-    token,
-    ...session,
-    companyId: session.companyId || "",
-    companyIds: companyIdsForSession(session),
-  };
+  delete sessions[token];
+  await saveSessions(sessions);
+  return null;
 }
 
 async function requireSession(req, res) {
@@ -309,14 +311,50 @@ function companyIdsForSession(session) {
   return uniqueCompanyIds([...(Array.isArray(session?.companyIds) ? session.companyIds : []), session?.companyId]);
 }
 
-function chooseCompanyId(state, preferredCompanyId, allowedCompanyIds) {
+function companyOwnershipMap(users) {
+  const owners = new Map();
+  for (const [account, user] of Object.entries(users || {})) {
+    for (const companyId of companyIdsForUser(user)) {
+      const normalizedAccount = normalizeAccount(account);
+      if (!normalizedAccount || !companyId) continue;
+      if (!owners.has(companyId)) owners.set(companyId, normalizedAccount);
+      else if (owners.get(companyId) !== normalizedAccount) owners.set(companyId, "__conflict__");
+    }
+  }
+  return owners;
+}
+
+function attachCompanyOwnership(state, users) {
+  const owners = companyOwnershipMap(users);
+  for (const workspace of state.companies || []) {
+    const companyId = workspace?.company?.id;
+    const ownerAccount = owners.get(companyId);
+    if (ownerAccount && ownerAccount !== "__conflict__") {
+      workspace.meta = { ...(workspace.meta || {}), ownerAccount };
+    }
+  }
+  return state;
+}
+
+function workspaceBelongsToSession(workspace, session) {
+  if (!workspace?.company?.id || !session?.userAccount) return false;
+  const companyId = workspace.company.id;
+  if (!companyIdsForSession(session).includes(companyId)) return false;
+  const ownerAccount = normalizeAccount(workspace.meta?.ownerAccount || "");
+  return !ownerAccount || ownerAccount === normalizeAccount(session.userAccount);
+}
+
+function chooseCompanyId(state, preferredCompanyId, allowedCompanyIds, session = {}) {
   const allowed = uniqueCompanyIds(allowedCompanyIds);
   if (!allowed.length) return "";
   const preferred = String(preferredCompanyId || "").trim();
-  if (preferred && allowed.includes(preferred) && state.companies.some((workspace) => workspace.company.id === preferred)) {
+  const visibleCompanyIds = (state.companies || [])
+    .filter((workspace) => workspaceBelongsToSession(workspace, { ...session, companyIds: allowed }))
+    .map((workspace) => workspace.company.id);
+  if (preferred && allowed.includes(preferred) && visibleCompanyIds.includes(preferred)) {
     return preferred;
   }
-  return allowed.find((companyId) => state.companies.some((workspace) => workspace.company.id === companyId)) || "";
+  return allowed.find((companyId) => visibleCompanyIds.includes(companyId)) || "";
 }
 
 function cleanText(value, fallback, maxLength = 80) {
@@ -679,6 +717,7 @@ function workspaceTemplateForCompany(input, options = {}) {
       creationStatus: options.creationStatus || "draft",
       agentWorkspaceId: company.id,
       agentWorkspaceVersion: 1,
+      ownerAccount: options.ownerAccount || "",
       createdAt: options.createdAt || Date.now(),
       updatedAt: Date.now(),
     },
@@ -1222,10 +1261,10 @@ async function loadState() {
   try {
     const raw = await fsp.readFile(STATE_FILE, "utf8");
     const parsed = JSON.parse(raw);
-    if (!parsed || ![1, 2].includes(parsed.version)) return normalizeState(defaultState());
-    return normalizeState(parsed);
+    const state = !parsed || ![1, 2].includes(parsed.version) ? normalizeState(defaultState()) : normalizeState(parsed);
+    return attachCompanyOwnership(state, await loadUsers());
   } catch {
-    return normalizeState(defaultState());
+    return attachCompanyOwnership(normalizeState(defaultState()), await loadUsers());
   }
 }
 
@@ -1239,15 +1278,14 @@ async function saveState(state) {
 function workspaceForSession(state, session) {
   const allowedCompanyIds = companyIdsForSession(session);
   if (!allowedCompanyIds.length) return null;
-  const companyId = chooseCompanyId(state, session?.companyId, allowedCompanyIds);
+  const companyId = chooseCompanyId(state, session?.companyId, allowedCompanyIds, session);
   if (!companyId) return null;
-  return state.companies.find((workspace) => workspace.company.id === companyId) || null;
+  return state.companies.find((workspace) => workspace.company.id === companyId && workspaceBelongsToSession(workspace, session)) || null;
 }
 
 function companyList(state, activeCompanyId, session) {
-  const allowedCompanyIds = companyIdsForSession(session);
   return state.companies
-    .filter((workspace) => allowedCompanyIds.includes(workspace.company.id))
+    .filter((workspace) => workspaceBelongsToSession(workspace, session))
     .map((workspace) => ({
       id: workspace.company.id,
       slug: workspace.company.slug,
@@ -1259,10 +1297,9 @@ function companyList(state, activeCompanyId, session) {
 
 function ownerForSession(state, session) {
   return {
-    ...state.owner,
-    name: session?.ownerName || state.owner.name || "老板",
-    phone: session?.ownerPhone || state.owner.phone || "",
-    reportTime: session?.ownerReportTime || state.owner.reportTime || "每天上午9点",
+    name: session?.ownerName || "老板",
+    phone: session?.ownerPhone || "",
+    reportTime: session?.ownerReportTime || "每天上午9点",
     account: session?.userAccount || "",
   };
 }
@@ -2007,10 +2044,12 @@ function serializeClaudeJob(job) {
   };
 }
 
-function startClaudeJob(message, companyId) {
+function startClaudeJob(message, sessionSnapshot) {
   cleanupClaudeJobs();
+  const companyId = sessionSnapshot?.companyId || "";
   const job = {
     id: id("job"),
+    userAccount: sessionSnapshot?.userAccount || "",
     status: "running",
     output: "",
     error: "",
@@ -2025,9 +2064,9 @@ function startClaudeJob(message, companyId) {
 
   (async () => {
     const state = await loadState();
-    const workspace = workspaceForSession(state, { companyId });
+    const workspace = workspaceForSession(state, sessionSnapshot);
     if (!workspace) throw new Error("请先创建自己的企业，再使用AI员工。");
-    const owner = ownerForSession(state, { companyId });
+    const owner = ownerForSession(state, sessionSnapshot);
     ensureCompanyAgentSession(workspace);
     markAgentEvent(job, "正在读取公司档案、任务队列和历史资料");
     await materializeAgentWorkspace(workspace, owner);
@@ -2045,7 +2084,7 @@ function startClaudeJob(message, companyId) {
       await saveState(state);
       job.status = "done";
       job.output = output;
-      job.dashboard = publicDashboard(state, { companyId: workspace.company.id });
+      job.dashboard = publicDashboard(state, { ...sessionSnapshot, companyId: workspace.company.id });
       markAgentEvent(job, "本次经营任务已完成");
     } else {
       job.status = "error";
@@ -2432,12 +2471,24 @@ async function handleApi(req, res) {
 
       const state = await loadState();
       const ownedCompanyIds = companyIdsForUser(user);
-      const loginCompanyId = chooseCompanyId(state, user.companyId, ownedCompanyIds);
+      const loginSession = {
+        userAccount: user.account,
+        ownerName: user.name,
+        ownerPhone: user.phone || "",
+        ownerReportTime: user.reportTime || "",
+        companyId: user.companyId,
+        companyIds: ownedCompanyIds,
+      };
+      const loginCompanyId = chooseCompanyId(state, user.companyId, ownedCompanyIds, loginSession);
       const loginWorkspace = loginCompanyId
-        ? state.companies.find((workspace) => workspace.company.id === loginCompanyId)
+        ? state.companies.find((workspace) => workspace.company.id === loginCompanyId && workspaceBelongsToSession(workspace, { ...loginSession, companyId: loginCompanyId }))
         : null;
       user.companyId = loginWorkspace?.company.id || "";
-      user.companyIds = uniqueCompanyIds(ownedCompanyIds.filter((companyId) => state.companies.some((workspace) => workspace.company.id === companyId)));
+      user.companyIds = uniqueCompanyIds(
+        ownedCompanyIds.filter((companyId) =>
+          state.companies.some((workspace) => workspace.company.id === companyId && workspaceBelongsToSession(workspace, { ...loginSession, companyId })),
+        ),
+      );
       user.lastLoginAt = Date.now();
       users[account] = user;
       if (loginWorkspace) {
@@ -2506,6 +2557,7 @@ async function handleApi(req, res) {
         slogan: cleanText(body.slogan, "", 120),
       }, {
         creationStatus: "queued",
+        ownerAccount: session.userAccount,
       });
       pushActivity(workspace, `老板提交了新公司创建：${companyName}。`);
       state.companies.push(workspace);
