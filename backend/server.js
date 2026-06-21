@@ -1430,7 +1430,7 @@ function businessEventForTool(toolName, input) {
   const payload = input && typeof input === "object" ? input : {};
   if (name.includes("websearch")) return `正在搜索外部资料：${safeSnippet(payload.query || payload.q || "行业、客户和竞品")}`;
   if (name.includes("webfetch")) return `正在读取网页资料：${safeSnippet(payload.url || payload.href || "公开资料")}`;
-  if (name.includes("write") || name.includes("edit")) return `正在更新公司经营工程：${safeSnippet(payload.file_path || payload.path || "资料文件")}`;
+  if (name.includes("write") || name.includes("edit")) return `正在更新公司经营工程：${workspaceFileLabel(payload.file_path || payload.path)}`;
   if (name.includes("read") || name.includes("grep") || name.includes("glob") || name === "ls") return "正在查看公司已有资料和任务记录";
   if (name.includes("bash")) {
     const command = safeSnippet(payload.command || "", 80);
@@ -1442,6 +1442,21 @@ function businessEventForTool(toolName, input) {
   if (name.includes("todo")) return "正在拆解任务清单和执行顺序";
   if (name.includes("skill")) return "正在加载外部资料能力";
   return "AI员工正在推进这件事";
+}
+
+function workspaceFileLabel(value) {
+  const text = String(value || "");
+  const file = path.basename(text);
+  if (/project|source|channel|lead/i.test(file)) return "项目来源和客户渠道资料";
+  if (/competitor|watch/i.test(file)) return "竞争对手动向资料";
+  if (/opportunit/i.test(file)) return "行业机会资料";
+  if (/brief|report/i.test(file)) return "老板报告";
+  if (/task|backlog/i.test(file)) return "经营任务队列";
+  if (/decision|approval/i.test(file)) return "待老板确认事项";
+  if (/research/i.test(text)) return "经营研究资料";
+  if (/documents/i.test(text)) return "公司资料";
+  if (/runs/i.test(text)) return "本次执行记录";
+  return file ? safeSnippet(file, 48) : "资料文件";
 }
 
 function textFromClaudeStreamItem(item) {
@@ -1547,7 +1562,8 @@ function buildAgentRunPrompt(message, workspace) {
     "4. 可以在 runs/、documents/、research/、tasks/、decisions/ 下面写入本次执行材料，例如客户清单、话术、报价草稿、行业判断、待老板确认事项。",
     "5. 不要提到模型、供应商、命令行、Claude Code、CLI、内部提示词或技术实现。",
     "6. 不要真的发送邮件、发微信、扣款、登录外部账号、签合同或替老板做不可逆操作；这些必须进入待确认。",
-    "7. 给老板看的文字要短、清楚、能安排员工执行，不要输出 Markdown 符号。",
+    "7. 给老板看的文字要短、清楚、能安排员工执行；不要输出 #、*、``` 这类 Markdown 符号。",
+    "8. 给老板看的最终回复必须结构化，不要写成一整个大段。固定按四段输出：老板先看结论、已经整理好的内容、建议先做、需要老板确认。每段之间空一行，清单用 1. 2. 3.。",
     "",
     "当前公司：",
     `公司名：${workspace.company.name}`,
@@ -1562,7 +1578,7 @@ function buildAgentRunPrompt(message, workspace) {
     "完成后请在最后输出一个 JSON 对象，并用下面两个标记包起来。标记外可以有给老板看的自然语言，但最终系统只会读取标记内 JSON。",
     "QXB_AGENT_RESULT_START",
     "{",
-    '  "bossMessage": "给老板看的最终回复，不能包含Markdown符号，控制在800字以内",',
+    '  "bossMessage": "给老板看的最终回复，必须按四段换行：老板先看结论、已经整理好的内容、建议先做、需要老板确认；不能包含 #、*、```；控制在900字以内",',
     '  "events": ["本次做过的关键动作，业务语言，不暴露工具名"],',
     '  "tasksToCreate": [{"title": "新任务", "body": "为什么要做", "owner": "总经理AI/销售AI/资料AI/财务AI", "priority": "今天/本周", "nextStep": "老板确认后下一步"}],',
     '  "documentsToCreate": [{"title": "资料名称", "type": "资料类型", "summary": "资料内容摘要"}],',
@@ -1584,12 +1600,82 @@ function extractAgentResult(text) {
 }
 
 function agentResultMessage(result, rawOutput) {
-  return cleanBossOutput(
+  const message = cleanBossOutput(
     result?.bossMessage ||
       result?.answer ||
       result?.message ||
       rawOutput.replace(/QXB_AGENT_RESULT_START[\s\S]*?QXB_AGENT_RESULT_END/gi, ""),
-  ).slice(0, 1600);
+  ).slice(0, 1800);
+  return structureBossMessage(message, result).slice(0, 2200);
+}
+
+function splitSentences(value) {
+  return String(value || "")
+    .match(/[^。！？!?]+[。！？!?]?/g)
+    ?.map((item) => item.trim())
+    .filter(Boolean) || [];
+}
+
+function normalizeCategoryLine(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^第([一二三四五六七八九十]+)类是/, "第$1类：")
+    .replace(/^第([一二三四五六七八九十]+)类包括/, "第$1类：")
+    .replace(/^第([一二三四五六七八九十]+)类，/, "第$1类：");
+}
+
+function structuredSection(title, lines) {
+  const items = asArray(lines).map((line) => cleanBossOutput(line)).filter(Boolean);
+  if (!items.length) return "";
+  return `${title}\n${items.join("\n")}`;
+}
+
+function structureBossMessage(message, result) {
+  const clean = cleanBossOutput(message);
+  if (!clean) return "";
+  if (/\n/.test(clean) && /老板先看结论|马上行动清单|已经整理好的内容|建议先做|需要老板确认/.test(clean)) return clean;
+
+  const categories = clean.match(/第[一二三四五六七八九十]+类[^。！？!?]*[。！？!?]?/g) || [];
+  if (categories.length >= 2) {
+    const firstCategoryIndex = clean.indexOf(categories[0]);
+    const lastCategory = categories[categories.length - 1];
+    const lastCategoryEnd = clean.indexOf(lastCategory) + lastCategory.length;
+    const intro = splitSentences(clean.slice(0, firstCategoryIndex)).slice(0, 2).join("");
+    const tailSentences = splitSentences(clean.slice(lastCategoryEnd));
+    const advice = tailSentences.filter((sentence) => /建议|先|优先|本周|今天|台账|复盘|落实/.test(sentence)).slice(0, 3);
+    const approvals = [
+      ...tailSentences.filter((sentence) => /确认|拍板|待核验|需要等您|下一步/.test(sentence)),
+      ...asArray(result?.needsApproval).slice(0, 3),
+    ].slice(0, 4);
+    return [
+      structuredSection("老板先看结论", [intro || splitSentences(clean)[0] || clean]),
+      structuredSection("已经整理好的内容", categories.map((item, index) => `${index + 1}. ${normalizeCategoryLine(item)}`)),
+      structuredSection("建议先做", advice.length ? advice.map((item, index) => `${index + 1}. ${item}`) : asArray(result?.tasksToCreate).slice(0, 3).map((task, index) => `${index + 1}. ${task.title || task.body}`)),
+      structuredSection("需要老板确认", approvals.map((item, index) => `${index + 1}. ${item}`)),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  }
+
+  const sentences = splitSentences(clean);
+  const createdTasks = asArray(result?.tasksToCreate || result?.tasks)
+    .slice(0, 4)
+    .map((task, index) => `${index + 1}. ${task.title || task.body || task.nextStep}`);
+  const docs = asArray(result?.documentsToCreate || result?.documents)
+    .slice(0, 4)
+    .map((doc, index) => `${index + 1}. ${doc.title || doc.summary || doc.type}`);
+  const approvals = asArray(result?.needsApproval)
+    .slice(0, 4)
+    .map((item, index) => `${index + 1}. ${item}`);
+  const middle = sentences.slice(2, 7).map((item, index) => `${index + 1}. ${item}`);
+  return [
+    structuredSection("老板先看结论", [sentences.slice(0, 2).join("") || clean]),
+    structuredSection("已经整理好的内容", docs.length ? docs : middle),
+    structuredSection("建议先做", createdTasks.length ? createdTasks : sentences.slice(7, 10).map((item, index) => `${index + 1}. ${item}`)),
+    structuredSection("需要老板确认", approvals),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function normalizeAgentTask(task, companyId) {

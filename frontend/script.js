@@ -254,6 +254,15 @@ function renderInlineMarkdown(value) {
     .replace(/(^|\s)#{1,6}\s*/g, "$1");
 }
 
+function renderListText(value) {
+  const html = renderInlineMarkdown(value);
+  const category = html.match(/^(第[一二三四五六七八九十]+类[：:：是]?[^，,。；;：:]{0,18})([，,。；;：:]?)([\s\S]*)$/);
+  if (category) return `<strong>${category[1].replace(/[：:是]$/, "")}</strong>${category[2] || "："}${category[3] || ""}`;
+  const labeled = html.match(/^([^：:]{2,16})[：:]\s*([\s\S]+)$/);
+  if (labeled) return `<strong>${labeled[1]}</strong>：${labeled[2]}`;
+  return html;
+}
+
 function renderMessageText(value) {
   const lines = String(value || "").replace(/\r\n/g, "\n").split("\n");
   const html = [];
@@ -267,6 +276,11 @@ function renderMessageText(value) {
     "可直接复制",
     "需要老板确认",
     "下一步动作",
+    "已经整理好的内容",
+    "已经放进资料库",
+    "建议先做",
+    "本次完成",
+    "执行过程",
     "竞争对手动向",
     "行业机会",
     "我的判断",
@@ -347,10 +361,10 @@ function renderMessageText(value) {
       openSection(boldHeading[1]);
     } else if (bullet) {
       openList("ul");
-      html.push(`<li>${renderInlineMarkdown(bullet[1])}</li>`);
+      html.push(`<li>${renderListText(bullet[1])}</li>`);
     } else if (numbered) {
       openList("ol");
-      html.push(`<li>${renderInlineMarkdown(numbered[1])}</li>`);
+      html.push(`<li>${renderListText(numbered[1])}</li>`);
     } else if (quote) {
       closeList();
       html.push(`<blockquote>${renderInlineMarkdown(quote[1])}</blockquote>`);

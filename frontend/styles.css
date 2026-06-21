@@ -679,15 +679,18 @@ h2 {
   align-content: start;
   gap: 10px;
   overflow: auto;
+  overflow-x: hidden;
   min-height: 250px;
   padding: 12px;
 }
 .message {
   width: min(100%, 420px);
+  max-width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fffaf0;
   padding: 10px 11px;
+  overflow: hidden;
 }
 .message.user {
   justify-self: end;
@@ -721,6 +724,14 @@ h2 {
   color: inherit;
   font-size: 14px;
   line-height: 1.58;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.message-body * {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .message-body p,
 .message-body ul,
@@ -758,6 +769,15 @@ h2 {
 }
 .message-body li + li {
   margin-top: 5px;
+}
+.message-body code,
+.message-body pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.message-body li strong {
+  font-weight: 900;
 }
 .message-body strong {
   font-weight: 900;
