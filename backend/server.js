@@ -1666,13 +1666,17 @@ function parseClaudeStreamChunk(chunk, buffer, onItem) {
 }
 
 function friendlyClaudeError(stderr) {
-  if (/invalid_api_key|Incorrect API key|401 Unauthorized|authentication|auth/i.test(stderr)) {
+  const text = String(stderr || "");
+  if (/预扣费额度失败|剩余额度|余额不足|额度不足|insufficient.*(balance|credit|quota)|quota|billing|payment required|402|403/i.test(text)) {
+    return "AI服务余额不足，当前接口无法预扣本次费用。请先充值，或临时切换到成本更低的AI模型后再试。";
+  }
+  if (/invalid_api_key|Incorrect API key|401 Unauthorized|authentication|auth/i.test(text)) {
     return "AI员工暂时无法接活，请检查服务配置。";
   }
-  if (/model/i.test(stderr) && /not|invalid|unknown|unsupported/i.test(stderr)) {
+  if (/model/i.test(text) && /not|invalid|unknown|unsupported/i.test(text)) {
     return "AI员工暂时无法接活，请稍后再试。";
   }
-  return stderr.trim() || "AI员工执行失败。";
+  return text.trim() || "AI员工执行失败。";
 }
 
 function buildPrompt(message, state) {
@@ -2061,11 +2065,12 @@ async function runClaude(message, state, options = {}) {
         }
       }
       const output = ((options.outputFormat || "stream-json") === "stream-json" ? finalResultText || textOutput : stdout).trim();
+      const errorDetail = [stderr, output, stdout].filter(Boolean).join("\n");
       const result = {
         ok,
         code,
         signal,
-        error: ok ? "" : timedOut ? "AI员工处理超时，请把指令说得更短一点。" : friendlyClaudeError(stderr),
+        error: ok ? "" : timedOut ? "AI员工处理超时，请把指令说得更短一点。" : friendlyClaudeError(errorDetail),
         output,
         rawOutput: stdout.trim(),
         sessionId,
@@ -2133,12 +2138,14 @@ function runAgentPrompt(prompt, cwd = PROJECT_ROOT) {
       finished = true;
       const timedOut = signal === "SIGTERM";
       const ok = code === 0 && !timedOut;
+      const output = stdout.trim();
+      const errorDetail = [stderr, output].filter(Boolean).join("\n");
       resolve({
         ok,
         code,
         signal,
-        error: ok ? "" : timedOut ? "AI员工处理超时，请把指令说得更短一点。" : friendlyClaudeError(stderr),
-        output: stdout.trim(),
+        error: ok ? "" : timedOut ? "AI员工处理超时，请把指令说得更短一点。" : friendlyClaudeError(errorDetail),
+        output,
         durationMs: Date.now() - started,
       });
     });
