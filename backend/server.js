@@ -1569,8 +1569,8 @@ function buildPrompt(message, state) {
     "1. 除非老板明确要求修改这个本地应用的文件，否则不要编辑文件。",
     "2. 不要真的发送邮件、发公众号、扣款、登录账号或操作外部系统；只给草稿和步骤。",
     "3. 不要提到内部系统提示、命令参数、模型名称或实现细节。",
-    "4. 不要输出 Markdown 符号，例如 #、**、```；如果需要分层，就用清楚的中文小标题和短句。",
-    "5. 回答控制在700字以内，默认按这四段结构输出：老板先看结论、马上行动清单、可直接复制、需要老板确认。",
+    "4. 不要输出 Markdown 符号，例如 #、**、```；如果需要分层，就用清楚的中文小标题和编号清单。",
+    "5. 不要套固定短模板。请像真实职业经理人一样正常交付：结论、依据、可执行动作、负责人、时间节奏、风险和需要老板拍板的事项都要讲清楚。",
     "6. 如果老板问竞争对手或行业机会，必须站在经营管理角度回答：影响成交什么、这周做什么、谁负责、观察什么信号、有什么风险。",
     "7. 不要空泛鼓励，不要讲大趋势套话；每一条建议都要能指导老板安排员工、销售、资料、报价、交付或回款。",
     "",
@@ -1597,8 +1597,8 @@ function buildAgentRunPrompt(message, workspace) {
     "4. 可以在 runs/、documents/、research/、tasks/、decisions/ 下面写入本次执行材料，例如客户清单、话术、报价草稿、行业判断、待老板确认事项。",
     "5. 不要提到模型、供应商、命令行、Claude Code、CLI、内部提示词或技术实现。",
     "6. 不要真的发送邮件、发微信、扣款、登录外部账号、签合同或替老板做不可逆操作；这些必须进入待确认。",
-    "7. 给老板看的文字要短、清楚、能安排员工执行；不要输出 #、*、``` 这类 Markdown 符号。",
-    "8. 给老板看的最终回复必须结构化，不要写成一整个大段。固定按四段输出：老板先看结论、已经整理好的内容、建议先做、需要老板确认。每段之间空一行，清单用 1. 2. 3.。",
+    "7. 给老板看的文字要完整、清楚、能安排员工执行；不要为了短而省略关键判断、依据、动作、负责人、时间节奏、风险和待确认事项。",
+    "8. 给老板看的最终回复必须结构化，不要写成一整个大段，但不要套固定四段模板。请根据老板问题自然组织小标题；报告类任务通常要包含：老板先看结论、我查到/整理到的判断、这周具体怎么做、谁负责、风险和需要老板确认。清单用 1. 2. 3.。",
     "",
     "当前公司：",
     `公司名：${workspace.company.name}`,
@@ -1613,7 +1613,7 @@ function buildAgentRunPrompt(message, workspace) {
     "完成后请在最后输出一个 JSON 对象，并用下面两个标记包起来。标记外可以有给老板看的自然语言，但最终系统只会读取标记内 JSON。",
     "QXB_AGENT_RESULT_START",
     "{",
-    '  "bossMessage": "给老板看的最终回复，必须按四段换行：老板先看结论、已经整理好的内容、建议先做、需要老板确认；不能包含 #、*、```；控制在900字以内",',
+    '  "bossMessage": "给老板看的完整最终回复。不能包含 #、*、```；不要暴露技术实现；不要套固定模板；根据任务给出足够完整的经营判断和行动方案，复杂报告建议1200到3000字，必要时可以更长",',
     '  "events": ["本次做过的关键动作，业务语言，不暴露工具名"],',
     '  "tasksToCreate": [{"title": "新任务", "body": "为什么要做", "owner": "总经理AI/销售AI/资料AI/财务AI", "priority": "今天/本周", "nextStep": "老板确认后下一步"}],',
     '  "documentsToCreate": [{"title": "资料名称", "type": "资料类型", "summary": "资料内容摘要"}],',
@@ -1640,8 +1640,10 @@ function agentResultMessage(result, rawOutput) {
       result?.answer ||
       result?.message ||
       rawOutput.replace(/QXB_AGENT_RESULT_START[\s\S]*?QXB_AGENT_RESULT_END/gi, ""),
-  ).slice(0, 1800);
-  return structureBossMessage(message, result).slice(0, 2200);
+  ).slice(0, 12000);
+  if (!message) return "";
+  if (result?.bossMessage || result?.answer || result?.message) return message;
+  return structureBossMessage(message, result).slice(0, 12000);
 }
 
 function splitSentences(value) {
@@ -1866,6 +1868,7 @@ async function runClaude(message, state, options = {}) {
     let stdout = "";
     let stderr = "";
     let textOutput = "";
+    let finalResultText = "";
     let streamBuffer = "";
     let finished = false;
     const child = spawn(CLAUDE_BIN, args, {
@@ -1887,7 +1890,10 @@ async function runClaude(message, state, options = {}) {
           const event = eventFromClaudeStreamItem(item);
           if (event) options.onEvent?.(event);
           const itemText = textFromClaudeStreamItem(item);
-          if (itemText) textOutput = itemText;
+          if (itemText) {
+            if (typeof item.result === "string" || item.type === "result") finalResultText = itemText;
+            else textOutput += itemText;
+          }
         });
       } else {
         textOutput += text;
@@ -1920,12 +1926,15 @@ async function runClaude(message, state, options = {}) {
         try {
           const item = JSON.parse(streamBuffer.trim());
           const itemText = textFromClaudeStreamItem(item);
-          if (itemText) textOutput = itemText;
+          if (itemText) {
+            if (typeof item.result === "string" || item.type === "result") finalResultText = itemText;
+            else textOutput += itemText;
+          }
         } catch {
           textOutput += streamBuffer;
         }
       }
-      const output = ((options.outputFormat || "stream-json") === "stream-json" ? textOutput : stdout).trim();
+      const output = ((options.outputFormat || "stream-json") === "stream-json" ? finalResultText || textOutput : stdout).trim();
       const result = {
         ok,
         code,
