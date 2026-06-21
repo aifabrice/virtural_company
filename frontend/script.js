@@ -195,6 +195,14 @@ const els = {
   modalTitle: document.querySelector("#modalTitle"),
   modalBody: document.querySelector("#modalBody"),
   modalClose: document.querySelector("#modalClose"),
+  documentDrawerBackdrop: document.querySelector("#documentDrawerBackdrop"),
+  documentDrawerClose: document.querySelector("#documentDrawerClose"),
+  documentDrawerTitle: document.querySelector("#documentDrawerTitle"),
+  documentDrawerType: document.querySelector("#documentDrawerType"),
+  documentDrawerMeta: document.querySelector("#documentDrawerMeta"),
+  documentDrawerBody: document.querySelector("#documentDrawerBody"),
+  copyDocumentButton: document.querySelector("#copyDocumentButton"),
+  improveDocumentButton: document.querySelector("#improveDocumentButton"),
   toastRegion: document.querySelector("#toastRegion"),
   logoutButton: document.querySelector("#logoutButton"),
 };
@@ -204,6 +212,8 @@ let agentBusy = false;
 let agentConnected = false;
 let passiveTimer = null;
 let modalCopyText = "";
+let drawerCopyText = "";
+let drawerDocumentId = "";
 let currentView = "today";
 let conversationMessages = [];
 let conversationCompanyId = "";
@@ -935,6 +945,108 @@ function documentText(doc) {
         ? "先确认报价口径，再推进采购客户和回款准备。"
         : "先确认关键事项，再推进客户、资料和收款准备。";
   return `${company.name}今日经营简报\n今日待确认：${dashboardState.tasks?.slice(0, 3).map((task) => task.title).join("、") || "暂无"}\nAI建议：${advice}`;
+}
+
+function documentExpansion(doc) {
+  const company = displayCompany();
+  const tasks = (dashboardState.tasks || []).slice(0, 5);
+  const kind = companyKind(company);
+  const customerText =
+    kind === "investment"
+      ? "项目方、财务顾问、产业园、券商律所和老股东转介绍"
+      : kind === "trade"
+        ? "老客户采购负责人、下游渠道商、区域代理商和稳定采购客户"
+        : "现有客户、附近潜在客户、转介绍客户和正在比较方案的客户";
+  return `
+
+经营背景
+这份资料不是给老板看的摘要，而是给公司本周执行用的工作底稿。当前公司是${company.name}，主营业务是${company.industry || "待补充"}。真正要解决的问题不是“写一份好看的材料”，而是让销售、资料、运营和财务知道今天该往哪里用力，哪些事情可以先做，哪些事情必须等老板确认。
+
+客户和机会判断
+优先看的客户范围是：${customerText}。这些对象的共同点是，他们不是被宏大概念打动，而是被清楚的利益、风险边界、交付周期和付款安排打动。资料要讲清楚三件事：我们帮谁解决什么问题，为什么现在值得谈，下一步怎么进入具体沟通。
+
+本周可以安排的动作
+${tasks.length ? tasks.map((task, index) => `${index + 1}. ${task.title}：${task.body || task.nextStep || "先拆成可执行动作，再让负责人推进。"}负责人建议为${task.owner || "总经理AI"}，下一步是${task.nextStep || "老板确认后继续推进"}。`).join("\n") : "1. 先确认主营业务和客户画像。\n2. 让AI补一页对外介绍。\n3. 整理第一批客户或项目来源。\n4. 建立本周复盘表。"}
+
+执行标准
+1. 每一个动作都要能落到负责人，不能只停留在“关注一下”。
+2. 每一份对外资料都要能给客户看，不能只写公司自己听得懂的话。
+3. 每一个客户或项目来源都要记录下一步，不要只有名单没有跟进。
+4. 每周至少复盘一次：哪些客户愿意继续聊，哪些话术有效，哪些报价或交付承诺需要老板拍板。
+
+需要老板确认
+1. 当前主推业务是否准确，如果不准确，先缩窄到一个最容易成交或最容易验证的场景。
+2. 哪些内容可以对外承诺，哪些内容只能作为内部判断。
+3. 本周允许AI和员工推进到什么程度：只整理资料，还是可以准备报价、联系名单和跟进话术。
+4. 是否需要把这份资料继续扩成正式报告、客户名单、报价草稿或员工执行清单。`;
+}
+
+function completeDocumentText(doc, text) {
+  const clean = String(text || "").trim() || documentText(doc);
+  if (clean.length >= 700) return clean;
+  return `${clean}${documentExpansion(doc)}`;
+}
+
+function renderDocumentContent(text) {
+  return `<div class="drawer-report">${renderMessageText(text)}</div>`;
+}
+
+async function openDocumentDrawer(doc) {
+  drawerDocumentId = doc.id;
+  drawerCopyText = "";
+  modalCopyText = "";
+  els.documentDrawerTitle.textContent = doc.title || "资料和报告";
+  els.documentDrawerType.textContent = doc.type || "资料";
+  els.documentDrawerMeta.textContent = "正在读取完整报告";
+  els.documentDrawerBody.innerHTML = `<div class="drawer-loading"><span></span><p>正在打开完整资料，不再只显示摘要。</p></div>`;
+  els.copyDocumentButton.disabled = true;
+  els.improveDocumentButton.disabled = true;
+  els.documentDrawerBackdrop.hidden = false;
+  try {
+    const data = await fetchJson(`/api/documents/${encodeURIComponent(doc.id)}`);
+    const detail = data.document || doc;
+    drawerCopyText = completeDocumentText(detail, detail.content || detail.summary || "");
+    modalCopyText = drawerCopyText;
+    els.documentDrawerTitle.textContent = detail.title || doc.title || "资料和报告";
+    els.documentDrawerType.textContent = detail.type || doc.type || "资料";
+    els.documentDrawerMeta.textContent = `${drawerCopyText.length}字 · ${detail.age || doc.age || "刚刚"}`;
+    els.documentDrawerBody.innerHTML = renderDocumentContent(drawerCopyText);
+  } catch (error) {
+    drawerCopyText = completeDocumentText(doc, documentText(doc));
+    modalCopyText = drawerCopyText;
+    els.documentDrawerMeta.textContent = `${drawerCopyText.length}字 · 已使用本地完整底稿`;
+    els.documentDrawerBody.innerHTML = renderDocumentContent(drawerCopyText);
+    toast(error.message || "完整资料读取失败，已显示本地底稿");
+  } finally {
+    els.copyDocumentButton.disabled = false;
+    els.improveDocumentButton.disabled = false;
+  }
+}
+
+function closeDocumentDrawer() {
+  els.documentDrawerBackdrop.hidden = true;
+  drawerCopyText = "";
+  drawerDocumentId = "";
+}
+
+async function copyDrawerDocument() {
+  if (!drawerCopyText) return;
+  try {
+    await navigator.clipboard.writeText(drawerCopyText);
+    toast("报告全文已复制");
+    pushLog("> 已复制资料报告全文");
+  } catch {
+    toast("复制失败，请手动选中内容复制");
+  }
+}
+
+function improveDrawerDocument() {
+  if (!drawerCopyText) return;
+  const doc = dashboardState.documents.find((item) => item.id === drawerDocumentId);
+  const title = doc?.title || "公司资料";
+  const text = drawerCopyText;
+  closeDocumentDrawer();
+  runAICli(`请把这份资料继续扩写和优化成老板能直接拿来决策的正式报告，至少1200字，要有结论、依据、行动清单、负责人、时间安排、风险提醒和需要老板确认的事项：${title}\n\n${text}`);
 }
 
 function openModal(key, detail) {
@@ -1692,7 +1804,7 @@ function initEvents() {
     const docNode = target.closest("[data-doc]");
     if (docNode) {
       const doc = dashboardState.documents.find((item) => item.id === docNode.dataset.doc);
-      if (doc) openModal("doc", { doc });
+      if (doc) openDocumentDrawer(doc);
       return;
     }
 
@@ -1799,10 +1911,17 @@ function initEvents() {
   els.modalBackdrop.addEventListener("click", (event) => {
     if (event.target === els.modalBackdrop) closeModal();
   });
+  els.documentDrawerClose.addEventListener("click", closeDocumentDrawer);
+  els.documentDrawerBackdrop.addEventListener("click", (event) => {
+    if (event.target === els.documentDrawerBackdrop) closeDocumentDrawer();
+  });
+  els.copyDocumentButton.addEventListener("click", copyDrawerDocument);
+  els.improveDocumentButton.addEventListener("click", improveDrawerDocument);
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
-      closeModal();
+      if (!els.documentDrawerBackdrop.hidden) closeDocumentDrawer();
+      else closeModal();
       els.menuPopover.classList.remove("open");
       els.menuButton.setAttribute("aria-expanded", "false");
     }

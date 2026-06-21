@@ -992,6 +992,8 @@ function competitorWatchReportMarkdown(workspace, pack) {
     "## 给老板的结论",
     `${company.name}现在不需要盲目跟竞品打价格战，先把“客户为什么选我们、我们能保证什么、销售下一步怎么跟”讲清楚。竞品监控的目的不是看热闹，而是指导本周获客、报价和交付动作。`,
     "",
+    "这份报告先按经营管理口径给老板看：竞争对手到底会抢走哪类客户、我们在哪些场景容易被比较、销售要怎么记录一线反馈、资料和报价要补什么。它不是泛泛的行业新闻汇总，而是本周可以安排员工照着做的监控和应对清单。",
+    "",
     "## 本周重点观察",
     ...moves.map((item, index) => [
       `${index + 1}. ${item.competitor || item.name || "竞品/替代方案"}`,
@@ -1001,10 +1003,29 @@ function competitorWatchReportMarkdown(workspace, pack) {
       `   - 一线观察信号：${item.watchSignal || "客户是否反复询价、要求案例、比较交期或压缩付款条件。"}`,
     ].join("\n")),
     "",
+    "## 对成交的实际影响",
+    "1. 价格影响：如果客户一上来就问最低价，说明他已经拿到过别家的报价。销售不能马上降价，要先问清楚客户比较的是服务范围、交付周期、质量承诺，还是付款条件。",
+    "2. 信任影响：如果竞品有更多案例或更清楚的介绍，客户会觉得我们“不够专业”。这时候要补一页公司优势、典型客户、交付步骤和售后承诺。",
+    "3. 速度影响：如果竞品响应更快，我们不是只靠老板亲自盯，而是要把报价模板、回访话术、资料包准备好，让销售当天能发出去。",
+    "4. 风险影响：如果竞品承诺过高，我们不要跟着乱承诺。要把能做到、做不到、需要另算费用的边界写清楚，避免后续交付和回款出问题。",
+    "",
     "## 可以立刻安排员工做的事",
     "1. 销售每次跟进客户时记录：客户提到的竞品、价格、交付周期、顾虑。",
     "2. 资料负责人把公司优势写成一页纸，只写客户能听懂、公司能做到的内容。",
     "3. 老板每周看一次竞品压力，决定是调整报价、补案例，还是换一批更合适的客户。",
+    "",
+    "## 本周执行节奏",
+    "周一：整理现有客户沟通记录，把客户提到的竞品、价格、顾虑和成交卡点放进一张表。",
+    "周二：销售挑10个正在沟通或近期有需求的客户，补问客户为什么还没决定、现在比较哪几家、最担心什么。",
+    "周三：资料负责人根据客户反馈补一页资料，重点写服务范围、报价边界、案例、交付步骤和售后承诺。",
+    "周四：老板看一次报价和资料，决定哪些内容可以对外发、哪些内容需要先保守一点。",
+    "周五：复盘本周客户反馈，判断下周是继续补资料、调整报价，还是换更适合的客户群。",
+    "",
+    "## 需要老板确认",
+    "1. 是否允许销售在跟进时系统记录竞品名称、报价区间和客户顾虑。",
+    "2. 是否把公司优势整理成一页对外资料，并允许AI先出草稿。",
+    "3. 是否设置一个报价底线，避免一线人员为了成交随意降价。",
+    "4. 是否每周固定看一次竞品压力和客户反馈，作为调整获客方向的依据。",
     "",
   ].join("\n");
 }
@@ -1027,6 +1048,8 @@ function industryOpportunityReportMarkdown(workspace, pack) {
     "## 给老板的结论",
     `行业机会要落到${company.name}本周能做的经营动作上：先找最容易验证的一条线，明确客户是谁、先讲什么、谁负责、几天看结果。`,
     "",
+    "老板不要被“大趋势”带着走。真正有用的机会，要能回答四个问题：客户为什么现在要买、我们凭什么能做、第一步找谁验证、如果一周没有反馈要怎么调整。下面按这个标准整理。",
+    "",
     "## 值得抓的机会",
     ...opportunities.map((item, index) => [
       `${index + 1}. ${item.opportunity || item.theme || "经营机会"}`,
@@ -1037,10 +1060,25 @@ function industryOpportunityReportMarkdown(workspace, pack) {
       `   - 风险提醒：${item.risk || "不要只看概念，必须用客户反馈验证。"}`,
     ].join("\n")),
     "",
+    "## 对公司经营的意义",
+    "1. 获客意义：机会不是多一个概念，而是多一个客户切入口。销售要知道先找哪类客户、第一句话怎么说、客户听完以后下一步怎么走。",
+    "2. 报价意义：如果机会能成立，报价不能只写一个总价，要把基础版、标准版、托管版或试点版拆出来，让客户有选择，也方便老板控制毛利。",
+    "3. 交付意义：新机会必须能交付，不能只靠销售承诺。要提前写清流程、周期、负责人、客户要配合什么。",
+    "4. 回款意义：机会再好，如果付款节点不清楚，也会变成账期压力。所以每一个机会都要配套回款安排。",
+    "",
+    "## 本周验证打法",
+    "1. 选一个最容易成交的小切口，不要同时铺开太多方向。",
+    "2. 找3到5个真实客户或合作方试聊，只问三个问题：现在有没有这个痛点、愿不愿意继续聊、预算或决策卡在哪里。",
+    "3. 把客户反馈当天记录下来，第二天就调整话术和资料，不要等月底才复盘。",
+    "4. 如果一周内没有客户愿意继续聊，说明切口不够准，要换客户群或换表达方式。",
+    "5. 如果有客户愿意继续聊，马上准备一页方案和报价，不要让机会停在口头沟通。",
+    "",
     "## 老板今天要拍板",
     "1. 先选一个机会做一周验证。",
     "2. 指定一个员工或AI角色负责整理资料和跟进记录。",
     "3. 约定复盘标准：有多少客户回复、多少客户愿意继续聊、卡点是什么。",
+    "4. 明确预算上限：本周验证只允许投入多少人力、多少广告或渠道费用。",
+    "5. 明确停止条件：如果客户反馈不成立，什么时候停止，不让团队陷入空转。",
     "",
   ].join("\n");
 }
@@ -1073,6 +1111,91 @@ function salesPlaybookMarkdown(workspace, pack) {
     ...asArray(playbook.followUp).map((item, index) => `${index + 1}. ${item}`),
     "",
   ].join("\n");
+}
+
+function documentWorkspacePath(doc) {
+  const idText = String(doc?.id || "");
+  const titleText = `${doc?.title || ""} ${doc?.type || ""}`;
+  const combined = `${idText} ${titleText}`.toLowerCase();
+  if (combined.includes("competitor_watch") || /竞争|竞品/.test(titleText)) return "reports/competitor_watch_report.md";
+  if (combined.includes("industry_opportunity") || /行业机会|机会报告/.test(titleText)) return "reports/industry_opportunity_report.md";
+  if (combined.includes("plan_90d") || /90天|经营计划/.test(titleText)) return "plans/operating_plan_90d.md";
+  if (combined.includes("sales_playbook") || /销售打法/.test(titleText)) return "playbooks/sales_playbook.md";
+  if (combined.includes("report") || /简报/.test(titleText)) return "documents/today_brief.md";
+  return "";
+}
+
+async function readAgentWorkspaceFile(root, relativePath) {
+  if (!relativePath) return "";
+  try {
+    return await fsp.readFile(safeAgentWorkspacePath(root, relativePath), "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function fullDocumentFallback(workspace, doc) {
+  const pack = researchPack(workspace, "");
+  const idText = String(doc?.id || "");
+  const titleText = `${doc?.title || ""} ${doc?.type || ""}`;
+  if (idText.includes("competitor_watch") || /竞争|竞品/.test(titleText)) return competitorWatchReportMarkdown(workspace, pack);
+  if (idText.includes("industry_opportunity") || /行业机会|机会报告/.test(titleText)) return industryOpportunityReportMarkdown(workspace, pack);
+  if (idText.includes("plan_90d") || /90天|经营计划/.test(titleText)) return operatingPlanMarkdown(workspace, pack);
+  if (idText.includes("sales_playbook") || /销售打法/.test(titleText)) return salesPlaybookMarkdown(workspace, pack);
+
+  const company = workspace.company;
+  const tasks = operatingBacklog(workspace).slice(0, 6);
+  return [
+    `# ${doc?.title || `${company.name}经营资料`}`,
+    "",
+    "## 老板先看结论",
+    `${company.name}这份资料不能只当摘要看，它的作用是把“现在先做什么、谁去做、做到什么程度、老板要拍什么板”讲清楚。当前主营业务是：${company.industry || "待补充"}。`,
+    "",
+    "## 当前公司情况",
+    `公司名称：${company.name}`,
+    `主营业务：${company.industry || "待补充"}`,
+    `一句话介绍：${company.slogan || "还需要老板补一句能对客户说清楚的话"}`,
+    `联系方式/官网：${company.website || "待补充"}`,
+    "",
+    "## 今天建议推进的事项",
+    ...tasks.map((task, index) => [
+      `${index + 1}. ${task.title}`,
+      `   - 为什么要做：${task.body || task.nextStep || "这件事会影响客户、资料、报价、交付或回款推进。"}`,
+      `   - 负责人：${task.owner || "总经理AI"}`,
+      `   - 下一步：${task.nextStep || "老板确认后，AI继续拆成可执行材料。"}`,
+    ].join("\n")),
+    "",
+    "## 本周执行安排",
+    "1. 先把客户画像和对外介绍写清楚，避免销售每次都临时发挥。",
+    "2. 把报价、交付范围、付款节点和售后边界列出来，避免后续扯皮。",
+    "3. 让销售或负责人每天记录客户反馈，至少包括客户来源、需求、顾虑、预算、下一步动作。",
+    "4. 老板每周固定看一次复盘：哪些客户有进展、哪些话术有效、哪里需要老板拍板。",
+    "",
+    "## 需要老板确认",
+    "1. 当前主推业务是否就是这一个方向，还是要先缩小到更容易成交的细分场景。",
+    "2. 是否允许AI继续补充客户名单、竞品对比、话术和报价草稿。",
+    "3. 对外资料里哪些承诺可以写，哪些必须先保守，避免过度承诺。",
+    "4. 本周预算和人力边界是多少，哪些事情可以先做，哪些必须等老板确认。",
+    "",
+  ].join("\n");
+}
+
+async function documentDetailForWorkspace(workspace, docId) {
+  const documents = Array.isArray(workspace?.documents) ? workspace.documents : [];
+  const doc = documents.find((item) => String(item.id) === String(docId));
+  if (!doc) return null;
+  const root = agentWorkspaceRoot(workspace.company.id);
+  const storedContent = cleanBossOutput(doc.content || doc.body || doc.fullText || "");
+  const fileContent = cleanBossOutput(await readAgentWorkspaceFile(root, documentWorkspacePath(doc)));
+  let content = storedContent || fileContent || cleanBossOutput(doc.summary || "");
+  if (content.length < 700) content = fullDocumentFallback(workspace, doc);
+  return {
+    id: doc.id,
+    title: doc.title || "资料和报告",
+    type: doc.type || "AI资料",
+    age: doc.age || "刚刚",
+    content: cleanBossOutput(content).slice(0, 18000),
+  };
 }
 
 async function materializeAgentWorkspace(workspace, owner, options = {}) {
@@ -1616,7 +1739,7 @@ function buildAgentRunPrompt(message, workspace) {
     '  "bossMessage": "给老板看的完整最终回复。不能包含 #、*、```；不要暴露技术实现；不要套固定模板；根据任务给出足够完整的经营判断和行动方案，复杂报告建议1200到3000字，必要时可以更长",',
     '  "events": ["本次做过的关键动作，业务语言，不暴露工具名"],',
     '  "tasksToCreate": [{"title": "新任务", "body": "为什么要做", "owner": "总经理AI/销售AI/资料AI/财务AI", "priority": "今天/本周", "nextStep": "老板确认后下一步"}],',
-    '  "documentsToCreate": [{"title": "资料名称", "type": "资料类型", "summary": "资料内容摘要"}],',
+    '  "documentsToCreate": [{"title": "资料名称", "type": "资料类型", "summary": "资料摘要", "content": "完整正文，报告类至少800字，复杂经营报告建议1200到3000字；必须包含结论、依据、动作、负责人、时间节奏、风险和待老板确认事项"}],',
     '  "agentUpdates": [{"role": "总经理AI", "status": "现在推进到哪里", "progress": 88}],',
     '  "inbox": {"title": "收件箱标题", "body": "老板需要先看的结果"},',
     '  "socialDraft": {"title": "可选，对外草稿标题", "body": "可选，对外草稿正文", "status": "草稿，未发送"},',
@@ -1735,12 +1858,14 @@ function normalizeAgentDocument(doc, companyId) {
   if (!doc || typeof doc !== "object") return null;
   const title = cleanText(doc.title || doc.name, "", 70);
   if (!title) return null;
+  const content = cleanBossOutput(doc.content || doc.fullText || doc.body || doc.report || doc.markdown || "");
   return {
     id: id("doc"),
     title,
     type: cleanText(doc.type, "AI资料", 30),
     age: "刚刚",
-    summary: cleanText(doc.summary || doc.body || doc.content, "", 220),
+    summary: cleanText(doc.summary || content || doc.body, "", 420),
+    content: content.slice(0, 18000),
     sourceCompanyId: companyId,
   };
 }
@@ -2543,6 +2668,23 @@ async function handleApi(req, res) {
   if (url.pathname === "/api/dashboard" && req.method === "GET") {
     const state = await loadState();
     sendJson(res, 200, { ok: true, dashboard: publicDashboard(state, session) });
+    return;
+  }
+
+  const documentMatch = url.pathname.match(/^\/api\/documents\/([^/]+)$/);
+  if (documentMatch && req.method === "GET") {
+    const state = await loadState();
+    const workspace = workspaceForSession(state, session);
+    if (!workspace) {
+      sendCompanyRequired(res);
+      return;
+    }
+    const documentDetail = await documentDetailForWorkspace(workspace, decodeURIComponent(documentMatch[1]));
+    if (!documentDetail) {
+      sendJson(res, 404, { ok: false, error: "没有找到这份资料。" });
+      return;
+    }
+    sendJson(res, 200, { ok: true, document: documentDetail });
     return;
   }
 
