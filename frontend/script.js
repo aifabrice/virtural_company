@@ -106,7 +106,7 @@ const setupDashboard = {
     {
       id: "setup_company",
       title: "创建自己的企业",
-      body: "新账号不会看到别人的公司。先填公司名称和主营业务，AI会为这家公司单独建立经营看板。",
+      body: "先填公司名称和主营业务，AI会为这家公司建立经营看板。",
       owner: "AI经营助手",
       status: "待老板填写",
       priority: "今天",
@@ -120,7 +120,7 @@ const setupDashboard = {
   ],
   inbox: {
     title: "先创建自己的企业",
-    body: "当前账号还没有绑定公司。创建企业后，资料、任务、AI员工和后续结果都会绑定到这个账号下。",
+    body: "当前账号还没有企业。创建企业后，AI会开始建立公司档案、经营任务和资料目录。",
   },
   socialDraft: {
     title: "等待公司资料",
@@ -1108,11 +1108,18 @@ function updateCreationEvents(job, stepId) {
     creationMotion.lastStepId = stepId;
     creationMotion.lastEventAt = 0;
   }
+  for (const event of job.events || []) {
+    if (!event?.text) continue;
+    creationMotion.events.push({
+      time: event.time || new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date()),
+      text: event.text,
+    });
+  }
   if (job.status === "done") {
     creationMotion.events.push({ time: "完成", text: "新公司经营看板已生成，准备进入工作台。" });
   } else if (job.status === "error") {
     creationMotion.events.push({ time: "异常", text: job.error || "创建过程中遇到问题。" });
-  } else if (now - creationMotion.lastEventAt > 850) {
+  } else if (!(job.events || []).length && now - creationMotion.lastEventAt > 850) {
     creationMotion.events.push({
       time: new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date()),
       text: creationMessageFor(stepId),
@@ -1255,25 +1262,27 @@ async function checkAIBridge() {
 async function runAICli(message) {
   if (agentBusy) {
     toast("AI员工正在处理上一条指令");
-    return;
+    return false;
   }
   setAIBusy(true);
   setAIStatus("处理中", "busy");
   addConversationMessage("user", message);
-  const pendingMessageId = addConversationMessage("agent", "收到，我正在整理结果。", "pending");
+  const pendingMessageId = addConversationMessage("agent", "收到，我正在打开公司AI工作区。", "pending");
 
+  let ok = false;
   try {
     const started = await fetchJson("/api/agent/jobs", {
       method: "POST",
       body: JSON.stringify({ message }),
     });
-    const data = await waitForAIJob(started.jobId);
+    const data = await waitForAIJob(started.jobId, pendingMessageId);
     const output = data.output || "已处理完成，但没有新的文字结果。";
     updateConversationMessage(pendingMessageId, { text: output, state: "" });
     if (data.dashboard) renderDashboard(data.dashboard);
     pushLog("> AI员工已返回结果");
     setAIStatus("在线", "ready");
     toast("AI员工已完成");
+    ok = true;
   } catch (error) {
     const messageText = error instanceof Error ? error.message : String(error);
     updateConversationMessage(pendingMessageId, { text: `这次没有处理成功：${messageText}`, state: "error" });
@@ -1283,9 +1292,16 @@ async function runAICli(message) {
   } finally {
     setAIBusy(false);
   }
+  return ok;
 }
 
-async function waitForAIJob(jobId) {
+function formatAgentProgress(data) {
+  const events = (data.events || []).slice(-5).map((event) => event.text).filter(Boolean);
+  if (!events.length) return "我正在处理，先读取公司档案、任务队列和历史资料。";
+  return ["我正在处理，当前进展：", ...events.map((text) => `• ${text}`)].join("\n");
+}
+
+async function waitForAIJob(jobId, pendingMessageId = "") {
   if (!jobId) throw new Error("任务没有启动成功。");
   for (let attempt = 0; attempt < 80; attempt += 1) {
     await delay(attempt === 0 ? 700 : 1500);
@@ -1293,7 +1309,8 @@ async function waitForAIJob(jobId) {
     if (data.status === "done") return data;
     if (data.status === "error") throw new Error(data.error || "AI员工执行失败。");
     const seconds = Math.max(1, Math.round((data.durationMs || 0) / 1000));
-    setAIStatus(`处理中 ${seconds}秒`, "busy");
+    setAIStatus(data.activeEvent || `处理中 ${seconds}秒`, "busy");
+    if (pendingMessageId) updateConversationMessage(pendingMessageId, { text: formatAgentProgress(data), state: "pending" });
   }
   throw new Error("处理时间太久，请稍后再试。");
 }
@@ -1329,10 +1346,11 @@ async function runCycle() {
   els.runCycleButton.disabled = true;
   pushLog("> AI员工开始跑一轮经营检查");
   try {
-    const data = await fetchJson("/api/agents/run-cycle", { method: "POST", body: "{}" });
-    renderDashboard(data.dashboard);
-    toast("AI已经继续推进一轮");
-    pushLog("> AI员工已完成一轮检查");
+    const ok = await runAICli("请主动跑一轮经营检查：先查看公司资料和任务队列，再检查今天最该推进的客户、资料、员工安排、竞品机会和待老板确认事项。请把新增任务和资料写回看板。");
+    if (ok) {
+      toast("AI已经完成一轮经营检查");
+      pushLog("> AI员工已完成一轮检查");
+    }
   } catch {
     toast("后端暂时不可用，已新增本地建议");
     const company = displayCompany();

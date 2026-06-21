@@ -16,15 +16,28 @@ const USERS_FILE = path.join(DATA_DIR, "users.json");
 const AGENT_WORKSPACES_DIR = path.join(DATA_DIR, "agent_workspaces");
 const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
 const MAX_BODY = 24 * 1024;
-const CLAUDE_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS || 180000);
+const CLAUDE_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS || 600000);
 const CLAUDE_PERMISSION_MODE = process.env.CLAUDE_PERMISSION_MODE || "auto";
 const CLAUDE_ALLOWED_TOOLS = (
   process.env.CLAUDE_ALLOWED_TOOLS ||
   [
     "Skill",
+    "Read",
+    "Write",
+    "Edit",
+    "MultiEdit",
+    "Glob",
+    "Grep",
+    "LS",
+    "TodoWrite",
     "WebFetch",
     "WebSearch",
     "Bash(curl *)",
+    "Bash(pwd)",
+    "Bash(ls *)",
+    "Bash(cat *)",
+    "Bash(mkdir *)",
+    "Bash(node *)",
     "Bash(node /root/.claude/skills/web-access/scripts/check-deps.mjs*)",
     "Bash(node /root/.claude/skills/web-access/scripts/find-url.mjs*)",
     "Bash(node /root/.claude/skills/web-access/scripts/match-site.mjs*)",
@@ -37,6 +50,7 @@ const SESSION_COOKIE = "qxb_session";
 const SESSION_TTL_MS = Number(process.env.QXB_SESSION_TTL_MS || 7 * 24 * 60 * 60 * 1000);
 const LOGIN_CODE = process.env.QXB_LOGIN_CODE || (process.env.NODE_ENV === "production" ? "" : "888888");
 const PASSWORD_KEY_LENGTH = 32;
+const STREAM_EVENT_LIMIT = 40;
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -1024,11 +1038,39 @@ function salesPlaybookMarkdown(workspace, pack) {
 
 async function materializeAgentWorkspace(workspace, owner, options = {}) {
   const root = agentWorkspaceRoot(workspace.company.id);
+  ensureCompanyAgentSession(workspace);
   const departments = departmentBlueprints(workspace);
   const backlog = operatingBacklog(workspace);
   const pack = options.researchPack || researchPack(workspace, options.aiNotes || "");
   const generatedAt = new Date().toISOString();
   await fsp.mkdir(root, { recursive: true });
+  await writeAgentWorkspaceFile(
+    root,
+    "CLAUDE.md",
+    [
+      `# ${workspace.company.name} AI经营工作区`,
+      "",
+      "你是企小帮的公司级AI经营团队，长期服务这家公司。",
+      "",
+      "工作方式：",
+      "- 先读公司档案、已有研究、任务队列和老板决策记录，再行动。",
+      "- 需要事实资料时，优先使用 web-access skill、公开搜索和网页读取，并把来源写入 sources.json 或 runs/ 记录。",
+      "- 可以在 research/、reports/、documents/、tasks/、decisions/、runs/ 下沉淀材料。",
+      "- 给老板看的内容必须业务化、朴素、可执行，不要提模型、供应商、命令行、Claude Code、CLI 或内部实现。",
+      "- 对外发送、付款、签约、登录外部账号、改真实配置等不可逆动作必须等待老板确认。",
+      "- 每次任务结束都要留下清楚的老板结论、下一步动作、待确认事项和可复用资料。",
+      "",
+      "目录说明：",
+      "- company_profile.json：公司基础档案",
+      "- research/：行业、客户、竞品、机会研究",
+      "- reports/：给老板看的报告",
+      "- documents/：对外资料和内部草稿",
+      "- tasks/：经营任务队列",
+      "- decisions/：老板需要拍板的事项",
+      "- runs/：每次AI执行记录",
+      "",
+    ].join("\n"),
+  );
   await writeAgentWorkspaceFile(
     root,
     "company_profile.json",
@@ -1264,7 +1306,7 @@ function publicDashboard(state, session) {
         {
           id: "setup_company",
           title: "创建自己的企业",
-          body: "新账号不会看到别人的公司。先填公司名称、主营业务和联系方式，AI会为这家公司单独建立经营看板。",
+          body: "先填公司名称、主营业务和联系方式，AI会为这家公司建立经营看板。",
           owner: "AI经营助手",
           status: "待老板填写",
           priority: "今天",
@@ -1278,7 +1320,7 @@ function publicDashboard(state, session) {
       ],
       inbox: {
         title: "先创建自己的企业",
-        body: "当前账号还没有绑定公司。创建企业后，系统会把资料、任务、AI员工和后续结果都绑定到这个账号下。",
+        body: "当前账号还没有企业。创建企业后，AI会开始建立公司档案、经营任务和资料目录。",
       },
       socialDraft: {
         title: "等待公司资料",
@@ -1332,11 +1374,122 @@ function claudeEnv() {
   return { ...process.env, NO_COLOR: "1" };
 }
 
+function ensureCompanyAgentSession(workspace) {
+  workspace.meta = workspace.meta || {};
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(workspace.meta.agentSessionId || "")) {
+    workspace.meta.agentSessionId = randomUUID();
+  }
+  workspace.meta.agentMode = "persistent_workspace";
+  workspace.meta.updatedAt = Date.now();
+  return workspace.meta.agentSessionId;
+}
+
 function claudePermissionArgs() {
   const args = [];
   if (CLAUDE_PERMISSION_MODE) args.push("--permission-mode", CLAUDE_PERMISSION_MODE);
   if (CLAUDE_ALLOWED_TOOLS.length) args.push("--allowedTools", CLAUDE_ALLOWED_TOOLS.join(","));
+  if (process.env.CLAUDE_MAX_BUDGET_USD) args.push("--max-budget-usd", process.env.CLAUDE_MAX_BUDGET_USD);
   return args;
+}
+
+function safeSnippet(value, maxLength = 90) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/[<>]/g, "")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function cleanBossOutput(value) {
+  return String(value || "")
+    .replace(/```[\s\S]*?```/g, (block) => block.replace(/```(?:json)?/gi, "").replace(/```/g, ""))
+    .replace(/^\s*#{1,6}\s*/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/^\s*[-*]\s+/gm, "• ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function markAgentEvent(job, text) {
+  if (!job || !text) return;
+  const item = {
+    id: id("evt"),
+    time: nowLabel(),
+    text: safeSnippet(text, 140),
+  };
+  const last = job.events?.[job.events.length - 1];
+  if (last?.text === item.text) return;
+  job.events = [...(job.events || []), item].slice(-STREAM_EVENT_LIMIT);
+  job.activeEvent = item.text;
+  job.updatedAt = Date.now();
+}
+
+function businessEventForTool(toolName, input) {
+  const name = String(toolName || "").toLowerCase();
+  const payload = input && typeof input === "object" ? input : {};
+  if (name.includes("websearch")) return `正在搜索外部资料：${safeSnippet(payload.query || payload.q || "行业、客户和竞品")}`;
+  if (name.includes("webfetch")) return `正在读取网页资料：${safeSnippet(payload.url || payload.href || "公开资料")}`;
+  if (name.includes("write") || name.includes("edit")) return `正在更新公司经营工程：${safeSnippet(payload.file_path || payload.path || "资料文件")}`;
+  if (name.includes("read") || name.includes("grep") || name.includes("glob") || name === "ls") return "正在查看公司已有资料和任务记录";
+  if (name.includes("bash")) {
+    const command = safeSnippet(payload.command || "", 80);
+    if (/curl/i.test(command)) return "正在抓取公开资料并整理来源";
+    if (/node/i.test(command)) return "正在运行资料整理脚本";
+    if (/cat|ls|pwd|mkdir/i.test(command)) return "正在整理公司工作目录";
+    return "正在执行资料整理动作";
+  }
+  if (name.includes("todo")) return "正在拆解任务清单和执行顺序";
+  if (name.includes("skill")) return "正在加载外部资料能力";
+  return "AI员工正在推进这件事";
+}
+
+function textFromClaudeStreamItem(item) {
+  if (!item || typeof item !== "object") return "";
+  if (typeof item.result === "string") return item.result;
+  if (typeof item.text === "string") return item.text;
+  if (typeof item.content === "string") return item.content;
+  const content = item.message?.content || item.delta?.text || item.delta?.content || item.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part?.type === "text" && typeof part.text === "string") return part.text;
+        return "";
+      })
+      .filter(Boolean)
+      .join("");
+  }
+  return "";
+}
+
+function eventFromClaudeStreamItem(item) {
+  const content = item?.message?.content || item?.content || [];
+  const parts = Array.isArray(content) ? content : [content];
+  for (const part of parts) {
+    if (!part || typeof part !== "object") continue;
+    if (part.type === "tool_use" || part.type === "server_tool_use") return businessEventForTool(part.name, part.input);
+    if (part.type === "tool_result") return "正在消化工具返回的资料";
+  }
+  if (item?.type === "system" && /init|session/i.test(item.subtype || "")) return "正在打开这家公司的AI工作区";
+  if (item?.type === "assistant") return "";
+  return "";
+}
+
+function parseClaudeStreamChunk(chunk, buffer, onItem) {
+  const lines = `${buffer}${chunk}`.split(/\r?\n/);
+  const rest = lines.pop() || "";
+  for (const line of lines) {
+    const text = line.trim();
+    if (!text) continue;
+    try {
+      onItem(JSON.parse(text));
+    } catch {
+      onItem({ type: "text", text });
+    }
+  }
+  return rest;
 }
 
 function friendlyClaudeError(stderr) {
@@ -1375,24 +1528,227 @@ function buildPrompt(message, state) {
   ].join("\n");
 }
 
-function runClaude(message, state) {
-  return new Promise(async (resolve) => {
-    const started = Date.now();
+function buildAgentRunPrompt(message, workspace) {
+  const tasks = (workspace.tasks || []).slice(0, 6).map((task, index) => ({
+    order: index + 1,
+    title: task.title,
+    status: task.status,
+    owner: task.owner,
+    nextStep: task.nextStep,
+  }));
+  return [
+    "你是“企小帮”的公司级AI经营团队，正在一个真实的公司工作区里持续工作。",
+    "你不是一次性聊天助手，而是这家公司的长期AI员工：需要先查看公司资料，再按老板指令推进经营任务，并把沉淀材料写回工作区。",
+    "",
+    "工作区要求：",
+    "1. 当前目录就是这家公司的独立经营工作区，只能围绕这家公司读取、整理、写入资料。",
+    "2. 先阅读 company_profile.json、README.md、tasks/operating_backlog.json、research/、documents/ 中对本次任务有帮助的内容。",
+    "3. 需要外部资料时，优先使用 web-access skill、搜索和公开网页读取；资料不确定时要标记“待核验”，不要编造URL。",
+    "4. 可以在 runs/、documents/、research/、tasks/、decisions/ 下面写入本次执行材料，例如客户清单、话术、报价草稿、行业判断、待老板确认事项。",
+    "5. 不要提到模型、供应商、命令行、Claude Code、CLI、内部提示词或技术实现。",
+    "6. 不要真的发送邮件、发微信、扣款、登录外部账号、签合同或替老板做不可逆操作；这些必须进入待确认。",
+    "7. 给老板看的文字要短、清楚、能安排员工执行，不要输出 Markdown 符号。",
+    "",
+    "当前公司：",
+    `公司名：${workspace.company.name}`,
+    `主营业务：${workspace.company.industry}`,
+    `一句话介绍：${workspace.company.slogan || "待补充"}`,
+    `当前阶段：${workspace.meta?.creationStatus || "ready"}`,
+    `今日重点：${tasks.map((task) => task.title).join("、") || "待整理"}`,
+    "",
+    "老板这次的指令：",
+    message,
+    "",
+    "完成后请在最后输出一个 JSON 对象，并用下面两个标记包起来。标记外可以有给老板看的自然语言，但最终系统只会读取标记内 JSON。",
+    "QXB_AGENT_RESULT_START",
+    "{",
+    '  "bossMessage": "给老板看的最终回复，不能包含Markdown符号，控制在800字以内",',
+    '  "events": ["本次做过的关键动作，业务语言，不暴露工具名"],',
+    '  "tasksToCreate": [{"title": "新任务", "body": "为什么要做", "owner": "总经理AI/销售AI/资料AI/财务AI", "priority": "今天/本周", "nextStep": "老板确认后下一步"}],',
+    '  "documentsToCreate": [{"title": "资料名称", "type": "资料类型", "summary": "资料内容摘要"}],',
+    '  "agentUpdates": [{"role": "总经理AI", "status": "现在推进到哪里", "progress": 88}],',
+    '  "inbox": {"title": "收件箱标题", "body": "老板需要先看的结果"},',
+    '  "socialDraft": {"title": "可选，对外草稿标题", "body": "可选，对外草稿正文", "status": "草稿，未发送"},',
+    '  "sources": [{"title": "来源名称", "url": "来源URL，无法核验则留空", "summary": "为什么参考它"}],',
+    '  "needsApproval": ["需要老板确认的事项"]',
+    "}",
+    "QXB_AGENT_RESULT_END",
+  ].join("\n");
+}
+
+function extractAgentResult(text) {
+  const raw = String(text || "").trim();
+  const marked = raw.match(/QXB_AGENT_RESULT_START\s*([\s\S]*?)\s*QXB_AGENT_RESULT_END/i);
+  const parsed = extractJsonObject(marked?.[1] || raw);
+  return parsed && typeof parsed === "object" ? parsed : null;
+}
+
+function agentResultMessage(result, rawOutput) {
+  return cleanBossOutput(
+    result?.bossMessage ||
+      result?.answer ||
+      result?.message ||
+      rawOutput.replace(/QXB_AGENT_RESULT_START[\s\S]*?QXB_AGENT_RESULT_END/gi, ""),
+  ).slice(0, 1600);
+}
+
+function normalizeAgentTask(task, companyId) {
+  if (!task || typeof task !== "object") return null;
+  const title = cleanText(task.title, "", 60);
+  if (!title) return null;
+  return {
+    id: id("task"),
+    title,
+    body: cleanText(task.body || task.reason || task.summary, "AI建议继续推进这件经营事项。", 220),
+    owner: cleanText(task.owner, "总经理AI", 40),
+    status: cleanText(task.status, "AI新建议", 30),
+    priority: cleanText(task.priority, "今天", 20),
+    nextStep: cleanText(task.nextStep || task.approval || task.action, "老板确认后，AI继续整理成可执行材料。", 120),
+    sourceCompanyId: companyId,
+  };
+}
+
+function normalizeAgentDocument(doc, companyId) {
+  if (!doc || typeof doc !== "object") return null;
+  const title = cleanText(doc.title || doc.name, "", 70);
+  if (!title) return null;
+  return {
+    id: id("doc"),
+    title,
+    type: cleanText(doc.type, "AI资料", 30),
+    age: "刚刚",
+    summary: cleanText(doc.summary || doc.body || doc.content, "", 220),
+    sourceCompanyId: companyId,
+  };
+}
+
+function metricNumber(value) {
+  const match = String(value || "").match(/\d+/);
+  return Number(match?.[0] || 0);
+}
+
+async function persistAgentRunFiles(workspace, jobId, payload) {
+  const root = agentWorkspaceRoot(workspace.company.id);
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  await writeAgentWorkspaceFile(root, `runs/${stamp}_${jobId}.json`, jsonBlock(payload));
+  await writeAgentWorkspaceFile(root, "tasks/operating_backlog.json", jsonBlock({ version: 1, generatedAt: new Date().toISOString(), tasks: operatingBacklog(workspace) }));
+}
+
+async function applyAgentResultToWorkspace(workspace, message, result, rawOutput, job) {
+  const bossMessage = agentResultMessage(result, rawOutput) || "我已经处理完这件事，并把结果写入公司经营看板。";
+  const events = asArray(result?.events).map((item) => safeSnippet(item, 140)).filter(Boolean);
+  for (const event of events) markAgentEvent(job, event);
+
+  const createdTasks = asArray(result?.tasksToCreate || result?.tasks)
+    .map((task) => normalizeAgentTask(task, workspace.company.id))
+    .filter(Boolean);
+  if (createdTasks.length) {
+    workspace.tasks = [...createdTasks, ...(workspace.tasks || [])].slice(0, 12);
+  }
+
+  const createdDocs = asArray(result?.documentsToCreate || result?.documents)
+    .map((doc) => normalizeAgentDocument(doc, workspace.company.id))
+    .filter(Boolean);
+  if (createdDocs.length) {
+    workspace.documents = [...createdDocs, ...(workspace.documents || [])].slice(0, 12);
+  }
+
+  for (const update of asArray(result?.agentUpdates)) {
+    const role = cleanText(update.role || update.name, "", 40);
+    const target = (workspace.agents || []).find((agent) => agent.role === role || agent.id === update.id);
+    if (!target) continue;
+    if (update.status) target.status = cleanText(update.status, target.status, 90);
+    if (update.progress !== undefined) target.progress = Math.max(1, Math.min(99, Number(update.progress) || target.progress || 70));
+  }
+  if (!asArray(result?.agentUpdates).length && workspace.agents?.length) {
+    const rotation = (workspace.cycleCount || 0) % workspace.agents.length;
+    workspace.agents = workspace.agents.map((agent, index) => ({
+      ...agent,
+      progress: Math.min(97, Number(agent.progress || 60) + (index === rotation ? 7 : 2)),
+      status: index === rotation ? "刚刚完成一项经营推进，等待老板看结果" : agent.status,
+    }));
+  }
+
+  if (result?.socialDraft && typeof result.socialDraft === "object") {
+    workspace.socialDraft = {
+      title: cleanText(result.socialDraft.title, workspace.socialDraft?.title || "对外草稿", 70),
+      body: cleanText(result.socialDraft.body, workspace.socialDraft?.body || "", 1200),
+      status: cleanText(result.socialDraft.status, "草稿，未发送", 40),
+    };
+  }
+
+  workspace.inbox = {
+    title: cleanText(result?.inbox?.title, "AI员工已完成处理", 60),
+    body: cleanText(result?.inbox?.body || bossMessage, bossMessage, 360),
+  };
+  workspace.cycleCount = Number(workspace.cycleCount || 0) + 1;
+  const doneMetric = (workspace.metrics || []).find((item) => item.label === "AI已完成");
+  if (doneMetric) doneMetric.value = `${Math.max(metricNumber(doneMetric.value), 5) + 1}件`;
+  const todoMetric = (workspace.metrics || []).find((item) => item.label === "今日待确认");
+  if (todoMetric) todoMetric.value = `${(workspace.tasks || []).filter((task) => /待|确认|建议/.test(task.status || "")).length || 1}件`;
+
+  pushActivity(workspace, `AI员工已完成老板指令：${message.slice(0, 32)}。`);
+  for (const approval of asArray(result?.needsApproval).slice(0, 3)) {
+    pushActivity(workspace, `待老板确认：${safeSnippet(approval, 60)}。`);
+  }
+  workspace.meta = {
+    ...(workspace.meta || {}),
+    agentMode: "persistent_workspace",
+    lastAgentRunAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  await persistAgentRunFiles(workspace, job?.id || id("job"), {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    bossInstruction: message,
+    bossMessage,
+    parsedResult: result || null,
+    rawOutput: rawOutput.slice(0, 20000),
+    events: job?.events || [],
+  });
+  return bossMessage;
+}
+
+async function runClaude(message, state, options = {}) {
+  const started = Date.now();
+  const cwd = options.cwd || agentWorkspaceRoot(state.company.id);
+  const prompt = options.prompt || buildAgentRunPrompt(message, state);
+  const sessionId = options.sessionId || ensureCompanyAgentSession(state);
+  try {
+    await fsp.mkdir(cwd, { recursive: true });
+  } catch (error) {
+    return {
+      ok: false,
+      error: `无法打开公司AI工作区：${error instanceof Error ? error.message : String(error)}`,
+      output: "",
+      rawOutput: "",
+      sessionId,
+      durationMs: Date.now() - started,
+    };
+  }
+  return new Promise((resolve) => {
     const args = [
       "-p",
-      buildPrompt(message, state),
+      prompt,
       "--model",
       process.env.ANTHROPIC_MODEL || "MiniMax-M3",
+      "--session-id",
+      sessionId,
       "--output-format",
-      "text",
+      options.outputFormat || "stream-json",
+      "--verbose",
+      "--add-dir",
+      cwd,
       ...claudePermissionArgs(),
     ];
 
     let stdout = "";
     let stderr = "";
+    let textOutput = "";
+    let streamBuffer = "";
     let finished = false;
     const child = spawn(CLAUDE_BIN, args, {
-      cwd: PROJECT_ROOT,
+      cwd,
       env: claudeEnv(),
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -1402,8 +1758,19 @@ function runClaude(message, state) {
     }, CLAUDE_TIMEOUT_MS);
 
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString("utf8");
+      const text = chunk.toString("utf8");
+      stdout += text;
       if (stdout.length > 60000) stdout = stdout.slice(-60000);
+      if ((options.outputFormat || "stream-json") === "stream-json") {
+        streamBuffer = parseClaudeStreamChunk(text, streamBuffer, (item) => {
+          const event = eventFromClaudeStreamItem(item);
+          if (event) options.onEvent?.(event);
+          const itemText = textFromClaudeStreamItem(item);
+          if (itemText) textOutput = itemText;
+        });
+      } else {
+        textOutput += text;
+      }
     });
 
     child.stderr.on("data", (chunk) => {
@@ -1428,12 +1795,24 @@ function runClaude(message, state) {
       finished = true;
       const timedOut = signal === "SIGTERM";
       const ok = code === 0 && !timedOut;
+      if (streamBuffer.trim()) {
+        try {
+          const item = JSON.parse(streamBuffer.trim());
+          const itemText = textFromClaudeStreamItem(item);
+          if (itemText) textOutput = itemText;
+        } catch {
+          textOutput += streamBuffer;
+        }
+      }
+      const output = ((options.outputFormat || "stream-json") === "stream-json" ? textOutput : stdout).trim();
       const result = {
         ok,
         code,
         signal,
         error: ok ? "" : timedOut ? "AI员工处理超时，请把指令说得更短一点。" : friendlyClaudeError(stderr),
-        output: stdout.trim(),
+        output,
+        rawOutput: stdout.trim(),
+        sessionId,
         durationMs: Date.now() - started,
       };
       if (process.env.QXB_DEBUG_CLAUDE === "1") {
@@ -1535,6 +1914,8 @@ function serializeClaudeJob(job) {
     status: job.status,
     output: job.output || "",
     error: job.error || "",
+    activeEvent: job.activeEvent || "",
+    events: job.events || [],
     durationMs: job.durationMs || Date.now() - job.startedAt,
     dashboard: job.dashboard || null,
   };
@@ -1547,6 +1928,8 @@ function startClaudeJob(message, companyId) {
     status: "running",
     output: "",
     error: "",
+    activeEvent: "正在打开公司AI工作区",
+    events: [],
     durationMs: 0,
     dashboard: null,
     startedAt: Date.now(),
@@ -1557,19 +1940,27 @@ function startClaudeJob(message, companyId) {
   (async () => {
     const state = await loadState();
     const workspace = workspaceForSession(state, { companyId });
-    const result = await runClaude(message, workspace);
+    if (!workspace) throw new Error("请先创建自己的企业，再使用AI员工。");
+    const owner = ownerForSession(state, { companyId });
+    ensureCompanyAgentSession(workspace);
+    markAgentEvent(job, "正在读取公司档案、任务队列和历史资料");
+    await materializeAgentWorkspace(workspace, owner);
+    await saveState(state);
+    const result = await runClaude(message, workspace, {
+      cwd: agentWorkspaceRoot(workspace.company.id),
+      onEvent: (event) => markAgentEvent(job, event),
+    });
     job.durationMs = result.durationMs;
     job.completedAt = Date.now();
     if (result.ok) {
-      pushActivity(workspace, `AI员工已完成老板指令：${message.slice(0, 32)}。`);
-      workspace.inbox = {
-        title: "AI员工已返回结果",
-        body: result.output.slice(0, 220),
-      };
+      markAgentEvent(job, "正在把结果写回经营看板");
+      const parsed = extractAgentResult(result.output || result.rawOutput);
+      const output = await applyAgentResultToWorkspace(workspace, message, parsed, result.output || result.rawOutput || "", job);
       await saveState(state);
       job.status = "done";
-      job.output = result.output;
+      job.output = output;
       job.dashboard = publicDashboard(state, { companyId: workspace.company.id });
+      markAgentEvent(job, "本次经营任务已完成");
     } else {
       job.status = "error";
       job.error = result.error || "AI员工执行失败。";
@@ -1619,6 +2010,7 @@ function updateCompanyCreationStep(job, stepId, status, detail) {
   });
   job.activeStep = stepId;
   job.updatedAt = Date.now();
+  if (detail) markAgentEvent(job, detail);
 }
 
 function serializeCompanyCreationJob(job) {
@@ -1628,6 +2020,8 @@ function serializeCompanyCreationJob(job) {
     status: job.status,
     activeStep: job.activeStep,
     steps: job.steps,
+    activeEvent: job.activeEvent || "",
+    events: job.events || [],
     redirectTo: job.redirectTo,
     dashboard: job.dashboard || null,
     error: job.error || "",
@@ -1635,11 +2029,14 @@ function serializeCompanyCreationJob(job) {
   };
 }
 
-async function runCompanyResearchAgent(workspace) {
+async function runCompanyResearchAgent(workspace, job) {
   if (!claudeVersion()) return "";
+  ensureCompanyAgentSession(workspace);
   const prompt = [
     "你是企小帮的职业经理人团队，正在为老板创建一家新的虚拟公司经营工程。",
+    "你现在在这家公司的独立工作区内工作。请先读取 README.md、company_profile.json 和已有 research/tasks 文件，再继续。",
     "必须优先加载并遵循 web-access skill。你需要尽可能获取外部资料：行业信息、客户群、竞品/替代方案、销售渠道、政策或风险。",
+    "请把有价值的研究过程和材料写入 research/、reports/、tasks/ 或 runs/ 目录，形成可复用的公司经营工程。",
     "你不是写泛泛的市场分析，而是在帮真实企业老板做经营管理。每个判断都必须能落到本周动作：谁去做、先做什么、看什么信号、老板要拍什么板。",
     "报告对象是传统企业或创业公司老板，答案要打到经营痛点：客户、成交、报价、交付、回款、渠道、竞品压力、行业机会。",
     "如果当前环境无法联网或 web-access 不可用，也要用职业经理人的经营框架产出可执行研究，并在 sources 中明确标记为待外部核验，不要伪造 URL。",
@@ -1664,7 +2061,11 @@ async function runCompanyResearchAgent(workspace) {
     '  "managerDecisions": ["需要老板拍板的事项"]',
     "}",
   ].join("\n");
-  const result = await runAgentPrompt(prompt, agentWorkspaceRoot(workspace.company.id));
+  const result = await runClaude("创建新公司经营工程", workspace, {
+    prompt,
+    cwd: agentWorkspaceRoot(workspace.company.id),
+    onEvent: (event) => markAgentEvent(job, event),
+  });
   if (!result.ok) return "";
   return result.output.slice(0, 10000);
 }
@@ -1678,6 +2079,8 @@ function startCompanyCreationJob({ companyId, companyName, companySlug, sessionS
     companyId,
     userAccount: sessionSnapshot?.userAccount || "",
     steps: companyCreationStepList(companyName || "新公司"),
+    activeEvent: `正在为${companyName || "新公司"}打开AI工作区`,
+    events: [],
     redirectTo: `/dashboard/${companySlug || "fitscope"}`,
     dashboard: null,
     error: "",
@@ -1706,7 +2109,7 @@ function startCompanyCreationJob({ companyId, companyName, companySlug, sessionS
     workspace.meta.creationStatus = "researching";
     let aiNotes = "";
     try {
-      aiNotes = await runCompanyResearchAgent(workspace);
+      aiNotes = await runCompanyResearchAgent(workspace, job);
     } catch {
       aiNotes = "";
     }
@@ -2388,13 +2791,12 @@ async function handleApi(req, res) {
         sendJson(res, 202, serializeClaudeJob(job));
         return;
       }
+      ensureCompanyAgentSession(workspace);
+      await materializeAgentWorkspace(workspace, ownerForSession(state, session));
       const result = await runClaude(message, workspace);
       if (result.ok) {
-        pushActivity(workspace, `AI员工已完成老板指令：${message.slice(0, 32)}。`);
-        workspace.inbox = {
-          title: "AI员工已返回结果",
-          body: result.output.slice(0, 220),
-        };
+        const parsed = extractAgentResult(result.output || result.rawOutput);
+        result.output = await applyAgentResultToWorkspace(workspace, message, parsed, result.output || result.rawOutput || "", null);
         await saveState(state);
         result.dashboard = publicDashboard(state, session);
       }
