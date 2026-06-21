@@ -179,6 +179,8 @@ const els = {
   menuButton: document.querySelector("#menuButton"),
   menuPopover: document.querySelector("#menuPopover"),
   closeChat: document.querySelector("#closeChat"),
+  chatPanel: document.querySelector("#chatPanel"),
+  agentConsole: document.querySelector(".agent-console"),
   openInbox: document.querySelector("#openInbox"),
   surpriseButton: document.querySelector("#surpriseButton"),
   composer: document.querySelector("#composer"),
@@ -442,8 +444,26 @@ function conversationGreeting() {
   return `我在这里帮${company.name || "公司"}推进经营任务。${firstTask}你可以直接吩咐我${examples}。`;
 }
 
-function renderConversation() {
-  els.agentMessages.innerHTML = conversationMessages
+function isNearMessageBottom() {
+  const list = els.agentMessages;
+  if (!list) return true;
+  return list.scrollHeight - list.scrollTop - list.clientHeight < 96;
+}
+
+function scrollConversationToBottom() {
+  const list = els.agentMessages;
+  if (!list) return;
+  window.requestAnimationFrame(() => {
+    list.scrollTop = list.scrollHeight;
+  });
+}
+
+function renderConversation({ forceScroll = false } = {}) {
+  const list = els.agentMessages;
+  if (!list) return;
+  const shouldStickToBottom = forceScroll || isNearMessageBottom();
+  const previousScrollTop = list.scrollTop;
+  list.innerHTML = conversationMessages
     .map(
       (item) => `<article class="message ${item.role} ${item.state || ""}">
         <div class="message-meta">
@@ -454,7 +474,13 @@ function renderConversation() {
       </article>`,
     )
     .join("");
-  els.agentMessages.scrollTop = els.agentMessages.scrollHeight;
+  if (shouldStickToBottom) {
+    scrollConversationToBottom();
+  } else {
+    window.requestAnimationFrame(() => {
+      list.scrollTop = previousScrollTop;
+    });
+  }
 }
 
 function addConversationMessage(role, text, state = "") {
@@ -467,13 +493,14 @@ function addConversationMessage(role, text, state = "") {
   };
   conversationMessages.push(message);
   conversationMessages = conversationMessages.slice(-24);
-  renderConversation();
+  renderConversation({ forceScroll: true });
   return message.id;
 }
 
 function updateConversationMessage(messageId, patch) {
+  const shouldStickToBottom = isNearMessageBottom();
   conversationMessages = conversationMessages.map((item) => (item.id === messageId ? { ...item, ...patch } : item));
-  renderConversation();
+  renderConversation({ forceScroll: shouldStickToBottom });
 }
 
 function ensureConversationGreeting() {
@@ -1246,6 +1273,8 @@ function setAIStatus(message, state = "") {
 
 function setAIBusy(isBusy) {
   agentBusy = isBusy;
+  els.chatPanel?.classList.toggle("is-busy", isBusy);
+  els.agentConsole?.classList.toggle("is-busy", isBusy);
   els.quickActionButtons.forEach((button) => {
     button.disabled = isBusy;
   });

@@ -582,8 +582,8 @@ h2 {
   right: 0;
   bottom: 0;
   z-index: 20;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   width: var(--chat-width);
   height: calc(100dvh - 64px);
   min-height: 0;
@@ -643,9 +643,10 @@ h2 {
   text-overflow: ellipsis;
 }
 .agent-console {
+  flex: 1 1 auto;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  height: 100%;
+  height: auto;
   min-height: 0;
   max-height: 100%;
   margin: 10px 10px 0;
@@ -653,6 +654,9 @@ h2 {
   border-radius: var(--radius);
   background: var(--surface);
   overflow: hidden;
+}
+.agent-console.is-busy {
+  box-shadow: inset 0 0 0 1px rgba(222, 92, 38, 0.12), 0 10px 28px rgba(65, 48, 26, 0.06);
 }
 .agent-console-head {
   display: flex;
@@ -672,6 +676,9 @@ h2 {
   line-height: 1.2;
 }
 .agent-status, #agentStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
@@ -679,12 +686,21 @@ h2 {
 .agent-status.ready, #agentStatus.ready { color: var(--good); }
 .agent-status.busy, #agentStatus.busy { color: var(--accent-dark); }
 .agent-status.error, #agentStatus.error { color: var(--bad); }
+#agentStatus.busy::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-dark);
+  box-shadow: 0 0 0 0 rgba(222, 92, 38, 0.38);
+  animation: status-breathe 1100ms ease-in-out infinite;
+}
 .message-list {
-  display: grid;
-  align-content: start;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   min-height: 0;
-  max-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -692,6 +708,7 @@ h2 {
   -webkit-overflow-scrolling: touch;
 }
 .message {
+  flex: 0 0 auto;
   width: min(100%, 420px);
   max-width: 100%;
   border: 1px solid var(--line);
@@ -701,18 +718,31 @@ h2 {
   overflow: hidden;
 }
 .message.user {
-  justify-self: end;
+  align-self: flex-end;
   border-color: var(--line-strong);
   background: var(--ink);
   color: white;
 }
 .message.agent {
-  justify-self: start;
+  align-self: flex-start;
   width: min(100%, 520px);
   background: var(--surface-2);
 }
 .message.pending {
+  position: relative;
   border-style: dashed;
+}
+.message.pending::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(222, 92, 38, 0.22);
+  border-top-color: var(--accent-dark);
+  border-radius: 50%;
+  animation: status-spin 900ms linear infinite;
 }
 .message.error {
   border-color: var(--bad);
@@ -816,6 +846,7 @@ h2 {
 }
 .chat-spacer { display: none; }
 .composer {
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: 32px 1fr auto;
   gap: 9px;
@@ -826,6 +857,9 @@ h2 {
   background: white;
   box-shadow: var(--shadow-soft);
   padding: 7px;
+}
+.chat-panel.is-busy .composer {
+  border-color: rgba(222, 92, 38, 0.34);
 }
 .attach {
   display: grid;
@@ -1209,6 +1243,13 @@ textarea::placeholder { color: oklch(0.58 0.02 72); }
   color: oklch(0.42 0.14 28) !important;
   padding: 10px;
 }
+@keyframes status-breathe {
+  0%, 100% { transform: scale(0.82); opacity: 0.62; box-shadow: 0 0 0 0 rgba(222, 92, 38, 0.28); }
+  50% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 7px rgba(222, 92, 38, 0); }
+}
+@keyframes status-spin {
+  to { transform: rotate(360deg); }
+}
 @keyframes creation-pulse {
   0%, 100% { transform: scale(0.92); opacity: 0.76; }
   50% { transform: scale(1.08); opacity: 1; }
@@ -1314,11 +1355,13 @@ textarea::placeholder { color: oklch(0.58 0.02 72); }
   }
   .chat-panel {
     top: auto;
+    bottom: 0;
     height: min(72vh, 560px);
     z-index: 80;
     border-left: 0;
     border-top: 1px solid var(--line);
   }
+  .agent-console { flex: 1 1 auto; height: auto; }
   .app-shell:not(.chat-open) .chat-panel { transform: translateY(100%); }
   .message-list { min-height: 0; }
 }
@@ -1351,7 +1394,9 @@ textarea::placeholder { color: oklch(0.58 0.02 72); }
   .creation-core b,
   .creation-scan::after,
   .creation-lane.active,
-  .creation-log-list p {
+  .creation-log-list p,
+  #agentStatus.busy::before,
+  .message.pending::after {
     animation: none;
   }
 }
