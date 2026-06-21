@@ -17,6 +17,22 @@ const AGENT_WORKSPACES_DIR = path.join(DATA_DIR, "agent_workspaces");
 const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
 const MAX_BODY = 24 * 1024;
 const CLAUDE_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS || 180000);
+const CLAUDE_PERMISSION_MODE = process.env.CLAUDE_PERMISSION_MODE || "auto";
+const CLAUDE_ALLOWED_TOOLS = (
+  process.env.CLAUDE_ALLOWED_TOOLS ||
+  [
+    "Skill",
+    "WebFetch",
+    "WebSearch",
+    "Bash(curl *)",
+    "Bash(node /root/.claude/skills/web-access/scripts/check-deps.mjs*)",
+    "Bash(node /root/.claude/skills/web-access/scripts/find-url.mjs*)",
+    "Bash(node /root/.claude/skills/web-access/scripts/match-site.mjs*)",
+  ].join(",")
+)
+  .split(",")
+  .map((tool) => tool.trim())
+  .filter(Boolean);
 const SESSION_COOKIE = "qxb_session";
 const SESSION_TTL_MS = Number(process.env.QXB_SESSION_TTL_MS || 7 * 24 * 60 * 60 * 1000);
 const LOGIN_CODE = process.env.QXB_LOGIN_CODE || (process.env.NODE_ENV === "production" ? "" : "888888");
@@ -1316,6 +1332,13 @@ function claudeEnv() {
   return { ...process.env, NO_COLOR: "1" };
 }
 
+function claudePermissionArgs() {
+  const args = [];
+  if (CLAUDE_PERMISSION_MODE) args.push("--permission-mode", CLAUDE_PERMISSION_MODE);
+  if (CLAUDE_ALLOWED_TOOLS.length) args.push("--allowedTools", CLAUDE_ALLOWED_TOOLS.join(","));
+  return args;
+}
+
 function friendlyClaudeError(stderr) {
   if (/invalid_api_key|Incorrect API key|401 Unauthorized|authentication|auth/i.test(stderr)) {
     return "AI员工暂时无法接活，请检查服务配置。";
@@ -1362,6 +1385,7 @@ function runClaude(message, state) {
       process.env.ANTHROPIC_MODEL || "MiniMax-M3",
       "--output-format",
       "text",
+      ...claudePermissionArgs(),
     ];
 
     let stdout = "";
@@ -1431,6 +1455,7 @@ function runAgentPrompt(prompt, cwd = PROJECT_ROOT) {
       process.env.ANTHROPIC_MODEL || "MiniMax-M3",
       "--output-format",
       "text",
+      ...claudePermissionArgs(),
     ];
 
     let stdout = "";
