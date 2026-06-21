@@ -2218,7 +2218,8 @@ function startCompanyCreationJob({ companyId, companyName, companySlug, sessionS
 
   (async () => {
     const state = await loadState();
-    const workspace = workspaceForSession(state, { companyId });
+    const workspace = workspaceForSession(state, sessionSnapshot);
+    if (!workspace) throw new Error("没有找到当前账号的新公司。");
     const owner = ownerForSession(state, sessionSnapshot);
     job.redirectTo = `/dashboard/${workspace.company.slug}`;
 
@@ -2881,7 +2882,7 @@ async function handleApi(req, res) {
         sendCompanyRequired(res);
         return;
       }
-      const job = startClaudeJob(message, session.companyId);
+      const job = startClaudeJob(message, session);
       sendJson(res, 202, serializeClaudeJob(job));
     } catch (error) {
       sendJson(res, 500, {
@@ -2896,7 +2897,7 @@ async function handleApi(req, res) {
   if (claudeJobMatch && req.method === "GET") {
     cleanupClaudeJobs();
     const job = claudeJobs.get(claudeJobMatch[1]);
-    if (!job) {
+    if (!job || (job.userAccount && job.userAccount !== session.userAccount)) {
       sendJson(res, 404, { ok: false, error: "没有找到这次AI任务。" });
       return;
     }
@@ -2925,7 +2926,7 @@ async function handleApi(req, res) {
         return;
       }
       if (url.pathname === "/api/claude" && req.headers["x-qxb-sync"] !== "1") {
-        const job = startClaudeJob(message, session.companyId);
+        const job = startClaudeJob(message, session);
         sendJson(res, 202, serializeClaudeJob(job));
         return;
       }
