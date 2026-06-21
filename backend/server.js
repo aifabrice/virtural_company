@@ -1077,7 +1077,6 @@ function salesPlaybookMarkdown(workspace, pack) {
 
 async function materializeAgentWorkspace(workspace, owner, options = {}) {
   const root = agentWorkspaceRoot(workspace.company.id);
-  ensureCompanyAgentSession(workspace);
   const departments = departmentBlueprints(workspace);
   const backlog = operatingBacklog(workspace);
   const pack = options.researchPack || researchPack(workspace, options.aiNotes || "");
@@ -1411,14 +1410,13 @@ function claudeEnv() {
   return { ...process.env, NO_COLOR: "1" };
 }
 
-function ensureCompanyAgentSession(workspace) {
+function createAgentRunSessionId(workspace) {
   workspace.meta = workspace.meta || {};
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(workspace.meta.agentSessionId || "")) {
-    workspace.meta.agentSessionId = randomUUID();
-  }
-  workspace.meta.agentMode = "persistent_workspace";
+  const sessionId = randomUUID();
+  workspace.meta.lastAgentSessionId = sessionId;
+  workspace.meta.agentMode = "workspace_files";
   workspace.meta.updatedAt = Date.now();
-  return workspace.meta.agentSessionId;
+  return sessionId;
 }
 
 function claudePermissionArgs() {
@@ -1836,7 +1834,7 @@ async function runClaude(message, state, options = {}) {
   const started = Date.now();
   const cwd = options.cwd || agentWorkspaceRoot(state.company.id);
   const prompt = options.prompt || buildAgentRunPrompt(message, state);
-  const sessionId = options.sessionId || ensureCompanyAgentSession(state);
+  const sessionId = options.sessionId || createAgentRunSessionId(state);
   try {
     await fsp.mkdir(cwd, { recursive: true });
   } catch (error) {
@@ -2067,7 +2065,6 @@ function startClaudeJob(message, sessionSnapshot) {
     const workspace = workspaceForSession(state, sessionSnapshot);
     if (!workspace) throw new Error("请先创建自己的企业，再使用AI员工。");
     const owner = ownerForSession(state, sessionSnapshot);
-    ensureCompanyAgentSession(workspace);
     markAgentEvent(job, "正在读取公司档案、任务队列和历史资料");
     await materializeAgentWorkspace(workspace, owner);
     await saveState(state);
@@ -2156,7 +2153,6 @@ function serializeCompanyCreationJob(job) {
 
 async function runCompanyResearchAgent(workspace, job) {
   if (!claudeVersion()) return "";
-  ensureCompanyAgentSession(workspace);
   const prompt = [
     "你是企小帮的职业经理人团队，正在为老板创建一家新的虚拟公司经营工程。",
     "你现在在这家公司的独立工作区内工作。请先读取 README.md、company_profile.json 和已有 research/tasks 文件，再继续。",
@@ -2930,7 +2926,6 @@ async function handleApi(req, res) {
         sendJson(res, 202, serializeClaudeJob(job));
         return;
       }
-      ensureCompanyAgentSession(workspace);
       await materializeAgentWorkspace(workspace, ownerForSession(state, session));
       const result = await runClaude(message, workspace);
       if (result.ok) {
