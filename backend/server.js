@@ -17,6 +17,8 @@ const AGENT_WORKSPACES_DIR = path.join(DATA_DIR, "agent_workspaces");
 const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
 const MAX_BODY = 24 * 1024;
 const CLAUDE_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS || 6000000);
+const AI_HTTP_TIMEOUT_MS = Number(process.env.AI_HTTP_TIMEOUT_MS || CLAUDE_TIMEOUT_MS);
+const AI_HTTP_MAX_TOKENS = Number(process.env.AI_HTTP_MAX_TOKENS || 16000);
 const CLAUDE_PERMISSION_MODE = process.env.CLAUDE_PERMISSION_MODE || "auto";
 const CLAUDE_ALLOWED_TOOLS = (
   process.env.CLAUDE_ALLOWED_TOOLS ||
@@ -51,6 +53,7 @@ const SESSION_TTL_MS = Number(process.env.QXB_SESSION_TTL_MS || 7 * 24 * 60 * 60
 const LOGIN_CODE = process.env.QXB_LOGIN_CODE || (process.env.NODE_ENV === "production" ? "" : "888888");
 const PASSWORD_KEY_LENGTH = 32;
 const STREAM_EVENT_LIMIT = 40;
+const AI_AGENT_PROVIDER = (process.env.QXB_AGENT_PROVIDER || process.env.AI_AGENT_PROVIDER || "").toLowerCase();
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -1533,6 +1536,124 @@ function claudeEnv() {
   return { ...process.env, NO_COLOR: "1" };
 }
 
+function shouldUseHttpAgent() {
+  return ["http", "minimax", "anthropic"].includes(AI_AGENT_PROVIDER);
+}
+
+function aiHttpEndpoint() {
+  const base = (process.env.ANTHROPIC_BASE_URL || "").trim().replace(/\/+$/, "");
+  return base ? `${base}/v1/messages` : "";
+}
+
+function aiHttpToken() {
+  return process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_API_KEY || "";
+}
+
+function textFromAnthropicMessage(payload) {
+  const content = payload?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (typeof part === "string") return part;
+      if (part?.type === "text" && typeof part.text === "string") return part.text;
+      if (typeof part?.text === "string") return part.text;
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+function adaptPromptForHttpAgent(prompt) {
+  return [
+    "你现在通过企小帮的AI接口工作，不能直接读写文件、不能操作命令行、不能暴露模型或供应商。",
+    "系统会把你输出的 JSON 自动写回公司看板、资料、报告和任务队列；所以请直接完成经营判断和内容生成，不要说自己无法操作文件。",
+    "所有给老板看的内容必须业务化、结构化、可执行。报告类内容要足够完整，不要只写几十字。",
+    "",
+    prompt,
+  ].join("\n");
+}
+
+async function runHttpAgentCompletion(prompt, options = {}) {
+  const started = Date.now();
+  const endpoint = aiHttpEndpoint();
+  const token = aiHttpToken();
+  const sessionId = options.sessionId || randomUUID();
+  if (!endpoint || !token) {
+    return {
+      ok: false,
+      error: "AI员工暂时无法接活，请检查服务配置。",
+      output: "",
+      rawOutput: "",
+      sessionId,
+      durationMs: Date.now() - started,
+    };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI_HTTP_TIMEOUT_MS);
+  try {
+    options.onEvent?.("正在向AI经营助手提交老板指令");
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "x-api-key": token,
+      },
+      body: JSON.stringify({
+        model: process.env.ANTHROPIC_MODEL || "MiniMax-M3",
+        max_tokens: AI_HTTP_MAX_TOKENS,
+        messages: [{ role: "user", content: adaptPromptForHttpAgent(prompt) }],
+      }),
+      signal: controller.signal,
+    });
+    const raw = await response.text();
+    let payload = null;
+    try {
+      payload = raw ? JSON.parse(raw) : null;
+    } catch {
+      payload = null;
+    }
+    if (!response.ok) {
+      const detail = payload?.error?.message || payload?.message || raw || `HTTP ${response.status}`;
+      return {
+        ok: false,
+        code: response.status,
+        error: friendlyClaudeError(detail),
+        output: "",
+        rawOutput: raw,
+        sessionId,
+        durationMs: Date.now() - started,
+      };
+    }
+    options.onEvent?.("正在整理AI返回的经营建议");
+    const output = textFromAnthropicMessage(payload) || raw.trim();
+    return {
+      ok: Boolean(output),
+      code: 0,
+      error: output ? "" : "AI员工没有返回有效内容，请稍后再试。",
+      output,
+      rawOutput: raw,
+      sessionId,
+      durationMs: Date.now() - started,
+    };
+  } catch (error) {
+    const aborted = error?.name === "AbortError";
+    return {
+      ok: false,
+      error: aborted ? "AI员工处理超时，请把指令说得更短一点。" : `AI员工执行失败：${error.message || String(error)}`,
+      output: "",
+      rawOutput: "",
+      sessionId,
+      durationMs: Date.now() - started,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function createAgentRunSessionId(workspace) {
   workspace.meta = workspace.meta || {};
   const sessionId = randomUUID();
@@ -1672,6 +1793,9 @@ function friendlyClaudeError(stderr) {
   }
   if (/invalid_api_key|Incorrect API key|401 Unauthorized|authentication|auth/i.test(text)) {
     return "AI员工暂时无法接活，请检查服务配置。";
+  }
+  if (/503|server_error|overloaded|temporarily unavailable|upstream|服务繁忙|暂时不可用/i.test(text)) {
+    return "AI服务暂时繁忙，请稍后再试。";
   }
   if (/model/i.test(text) && /not|invalid|unknown|unsupported/i.test(text)) {
     return "AI员工暂时无法接活，请稍后再试。";
@@ -1979,6 +2103,9 @@ async function runClaude(message, state, options = {}) {
       durationMs: Date.now() - started,
     };
   }
+  if (shouldUseHttpAgent()) {
+    return runHttpAgentCompletion(prompt, { ...options, sessionId });
+  }
   return new Promise((resolve) => {
     const args = [
       "-p",
@@ -2086,6 +2213,9 @@ async function runClaude(message, state, options = {}) {
 }
 
 function runAgentPrompt(prompt, cwd = PROJECT_ROOT) {
+  if (shouldUseHttpAgent()) {
+    return runHttpAgentCompletion(prompt);
+  }
   return new Promise((resolve) => {
     const started = Date.now();
     const args = [
