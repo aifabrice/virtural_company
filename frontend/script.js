@@ -1317,7 +1317,7 @@ function formatAgentProgress(data) {
 
 async function waitForAIJob(jobId, pendingMessageId = "") {
   if (!jobId) throw new Error("任务没有启动成功。");
-  for (let attempt = 0; attempt < 80; attempt += 1) {
+  for (let attempt = 0; attempt < 800; attempt += 1) {
     await delay(attempt === 0 ? 700 : 1500);
     const data = await fetchJson(`/api/agent/jobs/${encodeURIComponent(jobId)}`);
     if (data.status === "done") return data;
@@ -1392,7 +1392,7 @@ async function runCycle() {
 
 async function waitForCompanyCreation(jobId) {
   if (!jobId) throw new Error("公司创建任务没有启动成功。");
-  for (let attempt = 0; attempt < 180; attempt += 1) {
+  for (let attempt = 0; attempt < 1800; attempt += 1) {
     await delay(attempt === 0 ? 500 : 1200);
     const data = await fetchJson(`/api/company/jobs/${encodeURIComponent(jobId)}`);
     renderCompanyCreationProgress(data);

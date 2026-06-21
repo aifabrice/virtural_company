@@ -16,7 +16,7 @@ const USERS_FILE = path.join(DATA_DIR, "users.json");
 const AGENT_WORKSPACES_DIR = path.join(DATA_DIR, "agent_workspaces");
 const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
 const MAX_BODY = 24 * 1024;
-const CLAUDE_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS || 600000);
+const CLAUDE_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS || 6000000);
 const CLAUDE_PERMISSION_MODE = process.env.CLAUDE_PERMISSION_MODE || "auto";
 const CLAUDE_ALLOWED_TOOLS = (
   process.env.CLAUDE_ALLOWED_TOOLS ||
