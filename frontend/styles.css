@@ -596,27 +596,17 @@ h2 {
 }
 .app-shell:not(.chat-open) .chat-panel { transform: translateX(100%); }
 .surprise-chip {
-  position: relative;
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  margin: 8px 14px 0 12px;
-}
-.surprise-chip > button:first-child {
-  min-width: 112px;
-  min-height: 34px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-2);
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 900;
-  padding: 7px 12px;
+  margin: 0;
 }
 .close-chat {
-  position: absolute;
-  top: -5px;
-  right: -6px;
+  position: static;
   width: 30px;
   height: 30px;
   border: 0;
@@ -632,7 +622,7 @@ h2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
-  padding: 7px 10px 0;
+  padding: 10px 48px 0 10px;
 }
 .quick-actions button {
   overflow: hidden;
@@ -785,6 +775,11 @@ h2 {
   border-left: 3px solid rgba(222, 92, 38, 0.58);
   padding-left: 10px;
 }
+.message.agent .message-section {
+  border-radius: 7px;
+  background: rgba(255, 253, 247, 0.45);
+  padding: 8px 10px 8px 12px;
+}
 .message-section + .message-section {
   margin-top: 10px;
   padding-top: 2px;
@@ -793,7 +788,7 @@ h2 {
   color: var(--ink);
   font-size: 15px;
   font-weight: 900;
-  margin-bottom: 5px;
+  margin-bottom: 7px;
 }
 .message.user .message-body .message-heading {
   color: white;
@@ -806,7 +801,7 @@ h2 {
   padding-left: 20px;
 }
 .message-body li + li {
-  margin-top: 5px;
+  margin-top: 7px;
 }
 .message-body code,
 .message-body pre {

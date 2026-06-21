@@ -182,7 +182,6 @@ const els = {
   chatPanel: document.querySelector("#chatPanel"),
   agentConsole: document.querySelector(".agent-console"),
   openInbox: document.querySelector("#openInbox"),
-  surpriseButton: document.querySelector("#surpriseButton"),
   composer: document.querySelector("#composer"),
   chatInput: document.querySelector("#chatInput"),
   sendButton: document.querySelector("#sendButton"),
@@ -275,19 +274,70 @@ function renderListText(value) {
   return html;
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeMessageStructure(value, sectionNames) {
+  let text = String(value || "").replace(/\r\n/g, "\n").trim();
+  const headings = [
+    ...sectionNames,
+    "先看结论",
+    "结论",
+    "经营判断",
+    "我查到的情况",
+    "关键问题",
+    "今天发现的问题",
+    "本周动作",
+    "本周建议",
+    "员工安排",
+    "资料和报告",
+    "下一步",
+    "待老板确认",
+    "需要补充",
+    "风险和提醒",
+    "风险提醒",
+  ];
+  for (const heading of headings) {
+    const pattern = new RegExp(`(^|[\\n。！？!?])\\s*(${escapeRegExp(heading)})[。:：]?\\s*`, "g");
+    text = text.replace(pattern, (match, prefix, title) => `${prefix}\n\n${title}\n`);
+  }
+  text = text
+    .replace(/([。！？!?；;])\s*(第[一二三四五六七八九十]+[，、])/g, "$1\n$2")
+    .replace(/([。！？!?；;])\s*([一二三四五六七八九十]+[、.]\s*)/g, "$1\n$2")
+    .replace(/([。！？!?；;])\s*(\d+[.、)]\s*)/g, "$1\n$2")
+    .replace(/(\S[。！？!?；;])\s*(\d+[.、)]\s*)/g, "$1\n$2")
+    .replace(/\n{3,}/g, "\n\n");
+  return text;
+}
+
+function paragraphChunks(line) {
+  const sentences = line.match(/[^。！？!?；;]+[。！？!?；;]?/g)?.map((item) => item.trim()).filter(Boolean) || [];
+  if (line.length < 120 || sentences.length <= 2) return [line];
+  const chunks = [];
+  let current = "";
+  for (const sentence of sentences) {
+    if (current && `${current}${sentence}`.length > 110) {
+      chunks.push(current);
+      current = sentence;
+    } else {
+      current += sentence;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 function renderMessageText(value) {
-  const lines = String(value || "").replace(/\r\n/g, "\n").split("\n");
-  const html = [];
-  let listType = "";
-  let inCodeBlock = false;
-  let codeLines = [];
-  let sectionOpen = false;
   const sectionNames = [
     "老板先看结论",
+    "先看结论",
     "马上行动清单",
     "可直接复制",
     "需要老板确认",
+    "待老板确认",
     "下一步动作",
+    "下一步",
     "已经整理好的内容",
     "已经放进资料库",
     "建议先做",
@@ -296,9 +346,25 @@ function renderMessageText(value) {
     "竞争对手动向",
     "行业机会",
     "我的判断",
+    "经营判断",
+    "我查到的情况",
+    "关键问题",
+    "今天发现的问题",
     "具体动作",
+    "本周动作",
+    "本周建议",
+    "员工安排",
+    "资料和报告",
     "风险提醒",
+    "风险和提醒",
+    "需要补充",
   ];
+  const lines = normalizeMessageStructure(value, sectionNames).split("\n");
+  const html = [];
+  let listType = "";
+  let inCodeBlock = false;
+  let codeLines = [];
+  let sectionOpen = false;
 
   function closeList() {
     if (!listType) return;
@@ -358,8 +424,10 @@ function renderMessageText(value) {
     const boldHeading = line.match(/^\*\*(.+)\*\*$/) || line.match(/^__(.+)__$/);
     const sectionHeading = line.match(new RegExp(`^(?:[一二三四五六七八九十]+[、.]|\\d+[、.])?\\s*(${sectionNames.join("|")})\\s*[:：]?$`));
     const sectionWithText = line.match(new RegExp(`^(?:[一二三四五六七八九十]+[、.]|\\d+[、.])?\\s*(${sectionNames.join("|")})\\s*[:：]\\s*(.+)$`));
+    const inferredHeading = line.length <= 18 && /判断|结论|问题|动作|建议|安排|资料|报告|风险|确认|机会|执行|复盘/.test(line);
     const bullet = line.match(/^[-*•]\s+(.+)$/);
     const numbered = line.match(/^\d+[.、)]\s+(.+)$/);
+    const chineseNumbered = line.match(/^[一二三四五六七八九十]+[、.]\s*(.+)$/);
     const quote = line.match(/^>\s+(.+)$/);
 
     if (sectionWithText) {
@@ -377,12 +445,19 @@ function renderMessageText(value) {
     } else if (numbered) {
       openList("ol");
       html.push(`<li>${renderListText(numbered[1])}</li>`);
+    } else if (chineseNumbered) {
+      openList("ol");
+      html.push(`<li>${renderListText(chineseNumbered[1])}</li>`);
+    } else if (inferredHeading) {
+      openSection(line);
     } else if (quote) {
       closeList();
       html.push(`<blockquote>${renderInlineMarkdown(quote[1])}</blockquote>`);
     } else {
       closeList();
-      html.push(`<p>${renderInlineMarkdown(line)}</p>`);
+      for (const chunk of paragraphChunks(line)) {
+        html.push(`<p>${renderInlineMarkdown(chunk)}</p>`);
+      }
     }
   }
 
@@ -785,7 +860,7 @@ function companyKind(company) {
 function quickActionsForCompany(company) {
   if (needsCompanySetup()) {
     return [
-      ["创建企业", "我想创建自己的企业"],
+      ["帮我想办法", "", "cycle"],
       ["填公司资料", "我需要填写公司名称和主营业务"],
       ["看创建流程", "告诉我创建企业后会生成什么"],
       ["准备资料", "我应该先准备哪些企业资料"],
@@ -794,34 +869,36 @@ function quickActionsForCompany(company) {
   const kind = companyKind(company);
   if (kind === "investment") {
     return [
+      ["帮我想办法", "", "cycle"],
       ["找项目源", "帮我找20个可能适合投资或合作的项目来源渠道"],
       ["看竞争", "帮我监控同类投资机构和替代方案的动向，给我一份本周应对报告"],
       ["看机会", "帮我观察投资行业的发展机会，告诉我这家公司本周应该抓什么"],
-      ["安排尽调", "帮我把今天项目筛选、尽调和跟进工作列出来"],
     ];
   }
   if (kind === "trade") {
     return [
+      ["帮我想办法", "", "cycle"],
       ["找采购客户", "帮我找16个可能采购公司产品的客户"],
       ["看竞争", "帮我监控同行批发商、代理商和线上供应链平台的动向，给我本周应对报告"],
       ["看机会", "帮我观察贸易和供应链行业的发展机会，告诉我本周该抓什么"],
-      ["做报价单", "帮我做一份产品报价和交付说明"],
     ];
   }
   return [
+    ["帮我想办法", "", "cycle"],
     ["找10个客户", "帮我找10个适合公司业务的潜在客户"],
     ["看竞争", "帮我监控竞争对手和替代方案的动向，给我本周应对报告"],
     ["看机会", "帮我观察整个行业的发展机会，告诉我这家公司本周应该抓什么"],
-    ["做方案报价", "帮我做一份服务方案和报价"],
   ];
 }
 
 function updateQuickActions(company) {
-  quickActionsForCompany(company).forEach(([label, prompt], index) => {
+  quickActionsForCompany(company).forEach(([label, prompt, action], index) => {
     const button = els.quickActionButtons[index];
     if (!button) return;
     button.textContent = label;
     button.dataset.quick = prompt;
+    if (action) button.dataset.quickAction = action;
+    else delete button.dataset.quickAction;
   });
 }
 
@@ -1859,7 +1936,6 @@ function initEvents() {
     pushLog("> 已打开老板指令框");
   });
 
-  els.surpriseButton.addEventListener("click", runCycle);
   els.runCycleButton.addEventListener("click", runCycle);
   els.refreshDashboard.addEventListener("click", () => loadDashboard());
   els.healthButton.addEventListener("click", runHealthCheck);
@@ -1876,7 +1952,10 @@ function initEvents() {
   });
 
   els.quickActionButtons.forEach((button) => {
-    button.addEventListener("click", () => sendMessage(button.dataset.quick));
+    button.addEventListener("click", () => {
+      if (button.dataset.quickAction === "cycle") runCycle();
+      else sendMessage(button.dataset.quick || "");
+    });
   });
 
   els.imageInput.addEventListener("change", (event) => {
