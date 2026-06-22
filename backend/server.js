@@ -525,9 +525,15 @@ function workspaceFromLegacy(state) {
 function businessKind(company) {
   const text = `${company?.name || ""} ${company?.industry || ""} ${company?.slogan || ""}`;
   if (/投资|资本|基金|股权|融资|并购|投行|资产|财务顾问/.test(text)) return "investment";
+  if (/软件|SaaS|系统|平台|小程序|APP|应用|数字化|信息化|企服|企业服务/.test(text)) return "software";
+  if (/教育|培训|课程|学校|教培|留学|研学|托管/.test(text)) return "education";
+  if (/医疗|医美|诊所|药|健康|康复|养老|护理/.test(text)) return "healthcare";
+  if (/地产|房产|装修|装饰|工程|施工|建材|物业/.test(text)) return "real_estate";
+  if (/电商|直播|网店|抖音|淘宝|天猫|京东|小红书|私域/.test(text)) return "ecommerce";
   if (/门店|零售|餐饮|美容|服装|超市|酒店|民宿/.test(text)) return "retail";
   if (/贸易|批发|供应链|进出口|经销|代理/.test(text)) return "trade";
   if (/设备|机械|工厂|制造|维修|巡检|生产/.test(text)) return "industrial";
+  if (/家政|维修|保洁|搬家|摄影|婚庆|咨询|律所|会计|财税|设计|服务/.test(text)) return "local_service";
   return "general";
 }
 
@@ -844,40 +850,92 @@ function asArray(value) {
 function defaultResearchPack(workspace, aiNotes = "") {
   const company = workspace.company;
   const kind = businessKind(company);
-  const researchThemes =
-    kind === "investment"
-      ? ["项目来源", "投资方向", "尽调标准", "资金安排", "对外合作介绍"]
-      : kind === "trade"
-        ? ["采购客户", "货源稳定性", "报价体系", "交付周期", "回款风险"]
-        : kind === "retail"
-          ? ["门店客流", "复购产品", "员工排班", "会员转化", "收款与库存"]
-          : ["客户画像", "获客渠道", "对外资料", "交付流程", "收款准备"];
-  const competitors =
-    kind === "investment"
-      ? ["本地财务顾问机构", "产业基金平台", "券商投行团队"]
-      : kind === "trade"
-        ? ["同城批发商", "区域代理商", "线上供应链平台"]
-        : kind === "industrial"
-          ? ["本地维修服务商", "设备原厂售后", "备件经销商"]
-          : ["同城同行商家", "线上平台服务商", "老客户转介绍团队"];
-  const customerSegments =
-    kind === "investment"
-      ? [
-          ["项目方", "需要融资、并购或产业资源的企业", "先确认阶段、金额、资料完整度"],
-          ["资金方", "有明确行业偏好或配置需求的机构", "先说明项目质量和风险边界"],
-          ["中介渠道", "FA、律所、会计师、园区服务机构", "先建立稳定项目来源机制"],
-        ]
-      : kind === "trade"
-        ? [
-            ["稳定采购客户", "有持续采购和补货需求", "先给清楚报价、交期和售后"],
-            ["渠道商", "能带来批量订单或区域分销", "先确认价格体系和账期"],
-            ["老客户", "曾经成交或询价过", "先回访近期采购计划"],
-          ]
-        : [
-            ["老客户", "已经信任公司但缺少持续跟进", "先做回访和复购提醒"],
-            ["本地潜在客户", "有需求但还不了解公司", "先给简单可信的一页介绍"],
-            ["合作渠道", "能转介绍客户的同行或服务商", "先建立合作话术和分成规则"],
-          ];
+  const researchThemeMap = {
+    investment: ["项目来源", "投资方向", "尽调标准", "资金安排", "对外合作介绍"],
+    trade: ["采购客户", "货源稳定性", "报价体系", "交付周期", "回款风险"],
+    retail: ["门店客流", "复购产品", "员工排班", "会员转化", "收款与库存"],
+    industrial: ["目标工厂", "设备痛点", "响应速度", "备件供应", "尾款回收"],
+    local_service: ["本地客户", "服务套餐", "案例证明", "报价边界", "转介绍渠道"],
+    education: ["招生线索", "试听转化", "课程结果", "老师交付", "续费复购"],
+    healthcare: ["合规获客", "客户信任", "服务流程", "复诊复购", "风险告知"],
+    real_estate: ["项目线索", "预算判断", "报价明细", "工期验收", "尾款节点"],
+    ecommerce: ["主推SKU", "内容流量", "转化客服", "复购私域", "库存毛利"],
+    software: ["目标客户ICP", "痛点场景", "演示转化", "试点实施", "续费理由"],
+    general: ["客户画像", "获客渠道", "对外资料", "交付流程", "收款准备"],
+  };
+  const competitorMap = {
+    investment: ["本地财务顾问机构", "产业基金平台", "券商投行团队"],
+    trade: ["同城批发商", "区域代理商", "线上供应链平台"],
+    industrial: ["本地维修服务商", "设备原厂售后", "备件经销商"],
+    retail: ["同城同行门店", "团购平台商家", "社区私域团队"],
+    local_service: ["同城服务商", "平台接单商家", "熟人转介绍团队"],
+    education: ["同城培训机构", "线上课程平台", "学校/老师个人IP"],
+    healthcare: ["同城诊所/机构", "线上健康平台", "大型医院或连锁机构"],
+    real_estate: ["本地工程队", "装修/建材平台", "设计师和渠道商"],
+    ecommerce: ["同品类直播间", "平台头部店铺", "低价供应链卖家"],
+    software: ["同类SaaS产品", "传统软件外包商", "客户内部Excel/人工流程"],
+    general: ["同城同行商家", "线上平台服务商", "老客户转介绍团队"],
+  };
+  const customerSegmentMap = {
+    investment: [
+      ["项目方", "需要融资、并购或产业资源的企业", "先确认阶段、金额、资料完整度"],
+      ["资金方", "有明确行业偏好或配置需求的机构", "先说明项目质量和风险边界"],
+      ["中介渠道", "FA、律所、会计师、园区服务机构", "先建立稳定项目来源机制"],
+    ],
+    trade: [
+      ["稳定采购客户", "有持续采购和补货需求", "先给清楚报价、交期和售后"],
+      ["渠道商", "能带来批量订单或区域分销", "先确认价格体系和账期"],
+      ["老客户", "曾经成交或询价过", "先回访近期采购计划"],
+    ],
+    industrial: [
+      ["生产负责人", "关心停机、效率和现场响应", "先问近期设备故障和停机成本"],
+      ["采购负责人", "关心价格、账期、供应稳定", "先给清楚报价和交付边界"],
+      ["设备/维修负责人", "关心备件、质保和技术能力", "先用典型案例建立信任"],
+    ],
+    retail: [
+      ["附近新客", "有到店便利和即时需求", "先用主推产品或服务吸引试单"],
+      ["老客/会员", "有复购可能但缺少提醒", "先做复购提醒和会员权益"],
+      ["团购/平台客", "价格敏感但能带来客流", "先设置不伤毛利的引流款"],
+    ],
+    local_service: [
+      ["急需解决问题的本地客户", "重视响应速度和可信度", "先给服务流程和报价边界"],
+      ["老客户", "已建立信任，适合复购和转介绍", "先做回访和转介绍话术"],
+      ["合作渠道", "物业、社群、同行或专业机构", "先谈互相转介绍规则"],
+    ],
+    education: [
+      ["家长/学员", "关心结果、老师和价格", "先邀约试听并问清目标"],
+      ["企业HR", "关心培训效果和预算", "先给课程目标和交付方式"],
+      ["老学员", "有续费和转介绍可能", "先做学习结果复盘"],
+    ],
+    healthcare: [
+      ["初次咨询客户", "关心安全、效果和价格", "先做合规说明和风险告知"],
+      ["复诊/复购客户", "需要持续服务和提醒", "先建立复诊节奏"],
+      ["转介绍客户", "来自熟人信任", "先强化流程、资质和隐私保护"],
+    ],
+    real_estate: [
+      ["业主/甲方", "关心预算、工期和效果", "先确认需求和预算边界"],
+      ["设计师/渠道商", "能带来项目线索", "先建立分工和返佣边界"],
+      ["物业/开发商", "重视资质、交付和售后", "先准备案例和施工流程"],
+    ],
+    ecommerce: [
+      ["平台新客", "被内容或价格触发", "先测试主推SKU卖点"],
+      ["私域老客", "有复购和加购可能", "先做复购提醒和组合包"],
+      ["渠道达人/团长", "能带来批量转化", "先确认佣金和供货能力"],
+    ],
+    software: [
+      ["老板/业务负责人", "想降本、增收、少盯人", "先演示一个高频场景"],
+      ["部门负责人", "关心团队效率和数据", "先问清当前流程卡点"],
+      ["IT/实施负责人", "关心集成、安全和维护", "先给试点范围和上线计划"],
+    ],
+    general: [
+      ["老客户", "已经信任公司但缺少持续跟进", "先做回访和复购提醒"],
+      ["本地潜在客户", "有需求但还不了解公司", "先给简单可信的一页介绍"],
+      ["合作渠道", "能转介绍客户的同行或服务商", "先建立合作话术和分成规则"],
+    ],
+  };
+  const researchThemes = researchThemeMap[kind] || researchThemeMap.general;
+  const competitors = competitorMap[kind] || competitorMap.general;
+  const customerSegments = customerSegmentMap[kind] || customerSegmentMap.general;
   const managerDecisions = [
     "老板是否确认主推业务和客户优先级",
     "是否允许AI继续补充外部资料和客户名单",
@@ -1293,6 +1351,7 @@ async function materializeAgentWorkspace(workspace, owner, options = {}) {
       "",
       "- `company_profile.json`：公司基础档案",
       "- `sources.json`：外部资料和研究来源存证",
+      "- `research/latest_sources.json`：最近一次AI任务返回的来源、经营推断和待核验线索",
       "- `research/industry_brief.md`：经营研究底稿",
       "- `research/market_research.md`：市场与经营研究",
       "- `research/competitors.json`：竞品和替代方案",
@@ -1548,6 +1607,21 @@ function promptJson(value, maxLength = 1800) {
   return JSON.stringify(value, null, 2).slice(0, maxLength);
 }
 
+function researchPromptSnapshot(workspace) {
+  const pack = researchPack(workspace, "");
+  return {
+    sources: asArray(pack.sources).slice(0, 5).map((source) => ({
+      title: source.title,
+      summary: source.summary || source.type,
+      confidence: source.confidence || (source.url ? "已核验" : "经营推断/待核验"),
+    })),
+    customerSegments: asArray(pack.customerSegments).slice(0, 5),
+    competitors: asArray(pack.competitors).slice(0, 5),
+    competitorMoves: asArray(pack.competitorMoves).slice(0, 5),
+    industryOpportunities: asArray(pack.industryOpportunities).slice(0, 5),
+  };
+}
+
 function premiumBossServiceRules() {
   return [
     "老板付费感标准：",
@@ -1573,6 +1647,101 @@ function industryOperatingLens(company) {
     "7. 交付和回款：谁负责交付，客户要配合什么，付款节点怎么设计，坏账和延期怎么防。",
     "8. 本周验证：用最小动作验证，不要一上来做大方案；3到5个客户反馈比空泛行业判断更重要。",
   ];
+}
+
+function industrySpecialistPlaybook(company) {
+  const kind = businessKind(company);
+  const packs = {
+    investment: [
+      "行业专属打法：投资/资本/财务顾问",
+      "1. 核心不是“多看项目”，而是项目源质量、筛选标准、尽调节奏和资源匹配效率。",
+      "2. 客户两端都要看：项目方要融资、并购或产业资源；资金方要确定性、退出路径和风险边界。",
+      "3. 第一批动作：明确行业、阶段、金额区间、地域、排除项，建立项目评分表和跟进表。",
+      "4. 报告必须讲清：项目来源渠道、谁能引荐、第一句话、资料清单、下次跟进节点。",
+      "5. 风险重点：项目包装过度、估值虚高、信息不完整、老板时间被低质量项目消耗。",
+    ],
+    trade: [
+      "行业专属打法：贸易/批发/供应链",
+      "1. 核心是货源稳定、报价清楚、交期可信、账期可控，不是简单找客户名单。",
+      "2. 客户要按采购频率、采购金额、决策人、账期风险和复购可能性分层。",
+      "3. 第一批动作：明确主推品类、价格区间、最低起订量、交期、售后和付款条件。",
+      "4. 报告必须讲清：客户为什么会买、采购负责人是谁、第一句怎么开口、报价底线在哪里。",
+      "5. 风险重点：低价抢单、账期过长、库存压货、交付承诺超过供应能力。",
+    ],
+    industrial: [
+      "行业专属打法：制造/设备/工厂服务",
+      "1. 核心是解决停机、良率、效率、维修响应、备件和交付稳定性问题。",
+      "2. 客户通常关心故障成本、响应速度、案例、质保、交期和是否影响生产。",
+      "3. 第一批动作：整理设备/服务清单、典型故障场景、服务半径、响应时间和报价边界。",
+      "4. 报告必须讲清：找哪类工厂、找设备/生产/采购哪个负责人、用什么痛点切入。",
+      "5. 风险重点：过度承诺维修结果、备件供应不稳、现场安全、尾款拖延。",
+    ],
+    retail: [
+      "行业专属打法：门店/零售/餐饮/酒店",
+      "1. 核心是客流、转化、复购、客单价、员工执行和库存/排班。",
+      "2. 客户不是抽象人群，要拆成到店新客、老客、会员、附近社区、团购平台客。",
+      "3. 第一批动作：整理爆品/主推服务、到店理由、会员复购话术、员工每日动作表。",
+      "4. 报告必须讲清：今天怎么拉客、怎么提高成交、怎么让老客回来、员工怎么执行。",
+      "5. 风险重点：促销伤毛利、员工不执行、库存浪费、差评和服务不稳定。",
+    ],
+    local_service: [
+      "行业专属打法：本地服务/专业服务",
+      "1. 核心是信任、响应速度、案例、标准报价、服务边界和转介绍。",
+      "2. 客户通常先担心靠谱不靠谱、贵不贵、能不能按时完成、出了问题谁负责。",
+      "3. 第一批动作：整理服务套餐、报价边界、案例证明、常见问题和转介绍话术。",
+      "4. 报告必须讲清：优先找哪些本地客户或渠道、第一句话、如何证明可信。",
+      "5. 风险重点：范围不清导致加活、报价过低、交付延期、客户尾款争议。",
+    ],
+    education: [
+      "行业专属打法：教育/培训/课程",
+      "1. 核心是招生线索、转化试听、续费复购、老师交付和家长信任。",
+      "2. 决策人可能是家长、学生、企业HR或学校，痛点和话术必须分开。",
+      "3. 第一批动作：明确课程结果、适合人群、试听流程、成交话术和续费节点。",
+      "4. 报告必须讲清：线索从哪里来、试听怎么邀约、家长/学员最担心什么。",
+      "5. 风险重点：承诺过度、课程效果不可证明、获客成本高、老师交付不稳。",
+    ],
+    healthcare: [
+      "行业专属打法：医疗/健康/医美/养老",
+      "1. 核心是信任、合规、复诊复购、服务体验和风险边界。",
+      "2. 客户关心安全、资质、效果、价格、隐私和后续服务，不适合夸大承诺。",
+      "3. 第一批动作：整理合规介绍、服务流程、风险提示、客户问答和复购提醒。",
+      "4. 报告必须讲清：哪些内容可以对外说，哪些必须保守，哪些需要医生/专业人员确认。",
+      "5. 风险重点：违规宣传、效果承诺、隐私泄露、客诉和交付风险。",
+    ],
+    real_estate: [
+      "行业专属打法：地产/装修/工程/建材",
+      "1. 核心是项目线索、预算、决策链、报价明细、工期、验收和回款节点。",
+      "2. 客户通常会比较价格、案例、材料、工期、售后和付款方式。",
+      "3. 第一批动作：整理样板案例、报价模板、施工/交付节点、验收标准和付款节点。",
+      "4. 报告必须讲清：找业主、物业、开发商、设计师还是渠道商，怎么开口。",
+      "5. 风险重点：增项争议、工期延期、材料价格波动、验收扯皮、尾款回收。",
+    ],
+    ecommerce: [
+      "行业专属打法：电商/直播/私域",
+      "1. 核心是选品、流量、转化、复购、内容节奏、供应链和毛利。",
+      "2. 客户和用户要按平台、客单价、复购频率、内容触点和购买理由分层。",
+      "3. 第一批动作：明确主推SKU、卖点、内容脚本、投放预算、客服话术和复盘指标。",
+      "4. 报告必须讲清：今天发什么内容、测什么产品、看什么数据、亏损线在哪里。",
+      "5. 风险重点：流量虚高不成交、退货率、平台规则、库存和投放烧钱。",
+    ],
+    software: [
+      "行业专属打法：软件/SaaS/企服/数字化",
+      "1. 核心是目标客户、痛点场景、演示转化、试用激活、续费和实施成本。",
+      "2. 客户通常不是买功能，而是买降本、增收、提效、管控、合规或减少老板盯人的压力。",
+      "3. 第一批动作：定义ICP客户、3个高频场景、演示脚本、报价套餐和试点方案。",
+      "4. 报告必须讲清：找谁演示、怎么证明价值、试点多久、谁负责实施和验收。",
+      "5. 风险重点：需求定制过多、实施成本失控、客户不用、续费理由不足。",
+    ],
+    general: [
+      "行业专属打法：通用经营",
+      "1. 先判断这家公司更像卖产品、卖服务、卖项目、卖资源，还是卖长期关系。",
+      "2. 不确定行业时，先围绕客户、成交、报价、交付、回款五件事建立第一版经营假设。",
+      "3. 第一批动作：客户画像、对外介绍、报价边界、跟进节奏、老板拍板清单。",
+      "4. 报告必须把“可能有用”改成“今天谁做什么、几天看什么结果”。",
+      "5. 风险重点：方向太散、资料太空、没有真实客户反馈、老板亲自盯所有事。",
+    ],
+  };
+  return packs[kind] || packs.general;
 }
 
 function bossOutputRules() {
@@ -1620,6 +1789,8 @@ function workspacePromptSnapshot(workspace) {
     promptJson(tasks, 2200),
     "已有资料和报告：",
     promptJson(documents, 1800),
+    "已有研究和待核验线索：",
+    promptJson(researchPromptSnapshot(workspace), 2600),
     "近期经营记录：",
     ...promptBullets(recentActivity, "暂无近期记录"),
   ].join("\n");
@@ -1908,6 +2079,8 @@ function buildPrompt(message, state) {
     "",
     ...industryOperatingLens(state.company),
     "",
+    ...industrySpecialistPlaybook(state.company),
+    "",
     ...bossOutputRules(),
     "",
     "重要规则：",
@@ -1941,6 +2114,8 @@ function buildAgentRunPrompt(message, workspace) {
     ...premiumBossServiceRules(),
     "",
     ...industryOperatingLens(workspace.company),
+    "",
+    ...industrySpecialistPlaybook(workspace.company),
     "",
     ...bossOutputRules(),
     "",
@@ -1988,6 +2163,139 @@ function agentResultMessage(result, rawOutput) {
   if (!message) return "";
   if (result?.bossMessage || result?.answer || result?.message) return message;
   return structureBossMessage(message, result).slice(0, 12000);
+}
+
+function substantialBossInstruction(message) {
+  const text = String(message || "");
+  return (
+    text.length > 18 ||
+    /客户|获客|成交|销售|报价|交付|回款|收款|成本|利润|毛利|员工|安排|任务|资料|报告|竞争|竞品|机会|行业|项目|渠道|方案|计划|经营|检查|整理|监控|写|找|做/.test(text)
+  );
+}
+
+function reportLikeInstruction(message) {
+  return /报告|竞争|竞品|机会|行业|项目源|客户|渠道|方案|计划|经营检查|监控|分析/.test(String(message || ""));
+}
+
+function agentOutputQualityAudit(message, result, rawOutput) {
+  const parsed = result && typeof result === "object" ? result : extractAgentResult(rawOutput);
+  const bossMessage = agentResultMessage(parsed, rawOutput);
+  const docText = asArray(parsed?.documentsToCreate || parsed?.documents)
+    .map((doc) => `${doc.title || ""}\n${doc.summary || ""}\n${doc.content || doc.body || ""}`)
+    .join("\n");
+  const text = cleanBossOutput(`${bossMessage}\n${docText}`).trim();
+  const needsLong = reportLikeInstruction(message);
+  const checks = [
+    {
+      ok: text.length >= (needsLong ? 900 : 360),
+      issue: needsLong ? "内容太短，不像一份老板愿意付费看的经营报告。" : "内容偏短，经营判断和动作不够完整。",
+    },
+    {
+      ok: (text.match(/\n\S/g) || []).length >= 4 || /老板先看结论|本周动作|需要老板确认|风险/.test(text),
+      issue: "结构不够清楚，缺少单独成行的小标题或分段。",
+    },
+    {
+      ok: /客户|采购|项目方|资金方|会员|用户|业主|家长|决策人/.test(text),
+      issue: "没有讲清客户是谁、谁会买、谁能拍板。",
+    },
+    {
+      ok: /成交|报价|价格|毛利|利润|成本|交付|回款|收款|账期|复购|续费|试点/.test(text),
+      issue: "没有触及成交、报价、利润、交付或回款这些老板真正关心的点。",
+    },
+    {
+      ok: /今天|本周|明天|周一|周二|负责人|安排|下一步|先做|验证|复盘/.test(text),
+      issue: "没有给出今天或本周能执行的动作、负责人或验证方法。",
+    },
+    {
+      ok: /风险|别|不要|谨慎|底线|边界|待核验|确认|拍板/.test(text),
+      issue: "没有替老板提示风险、边界或需要拍板的事项。",
+    },
+    {
+      ok:
+        asArray(parsed?.tasksToCreate || parsed?.tasks).length > 0 ||
+        asArray(parsed?.documentsToCreate || parsed?.documents).length > 0 ||
+        asArray(parsed?.needsApproval).length > 0 ||
+        Boolean(parsed?.socialDraft),
+      issue: "没有沉淀任务、资料、报告、草稿或老板确认事项。",
+    },
+  ];
+  const issues = checks.filter((item) => !item.ok).map((item) => item.issue);
+  return {
+    passed: !substantialBossInstruction(message) || issues.length <= 1,
+    score: checks.length - issues.length,
+    total: checks.length,
+    issues,
+    textLength: text.length,
+  };
+}
+
+function buildQualityRepairPrompt(message, workspace, rawOutput, audit) {
+  return [
+    "你是企小帮的首席经营顾问，正在做一次质量返工。",
+    "下面这次回答没有达到老板愿意付费的标准。你必须重写成更像懂行业、懂成交、懂管理的经营交付。",
+    "",
+    workspacePromptSnapshot(workspace),
+    "",
+    ...premiumBossServiceRules(),
+    "",
+    ...industryOperatingLens(workspace.company),
+    "",
+    ...industrySpecialistPlaybook(workspace.company),
+    "",
+    ...bossOutputRules(),
+    "",
+    "这次不合格原因：",
+    ...promptBullets(audit.issues, "内容质量不足"),
+    "",
+    "重写要求：",
+    "1. 必须只输出 QXB_AGENT_RESULT_START 和 QXB_AGENT_RESULT_END 包裹的 JSON，不要输出其它解释。",
+    "2. bossMessage 必须有3到6个中文小标题，标题单独占一行。",
+    "3. 如果是报告/客户/竞品/机会类任务，bossMessage 建议1200到3000字；documentsToCreate 里也要沉淀完整报告。",
+    "4. 必须包含客户是谁、为什么买、成交或报价卡点、交付或回款风险、本周动作、负责人、老板要拍板什么。",
+    "5. 没有外部来源时，sources 里标记为经营推断或待核验，不要伪造URL。",
+    "",
+    "老板原始指令：",
+    message,
+    "",
+    "上一版回答：",
+    String(rawOutput || "").slice(0, 12000),
+    "",
+    "输出格式：",
+    "QXB_AGENT_RESULT_START",
+    "{",
+    '  "bossMessage": "重写后的完整经营答复",',
+    '  "events": ["已完成的关键动作"],',
+    '  "tasksToCreate": [{"title": "新任务", "body": "为什么要做", "owner": "总经理AI/销售AI/资料AI/财务AI", "priority": "今天/本周", "nextStep": "具体下一步"}],',
+    '  "documentsToCreate": [{"title": "资料或报告名称", "type": "老板报告/客户清单/竞品报告/机会报告/销售话术", "summary": "摘要", "content": "完整正文"}],',
+    '  "agentUpdates": [{"role": "总经理AI", "status": "现在推进到哪里", "progress": 88}],',
+    '  "inbox": {"title": "给老板看的短标题", "body": "最重要结论"},',
+    '  "socialDraft": {"title": "可选", "body": "可选", "status": "草稿，未发送"},',
+    '  "sources": [{"title": "来源或判断依据", "url": "", "summary": "为什么参考它", "confidence": "已核验/经营推断/待核验"}],',
+    '  "needsApproval": ["需要老板确认的事项"]',
+    "}",
+    "QXB_AGENT_RESULT_END",
+  ].join("\n");
+}
+
+async function improveAgentResultIfNeeded(message, workspace, result, job) {
+  if (!result?.ok) return result;
+  const raw = result.output || result.rawOutput || "";
+  const parsed = extractAgentResult(raw);
+  const audit = agentOutputQualityAudit(message, parsed, raw);
+  if (audit.passed || !shouldUseHttpAgent()) return result;
+  markAgentEvent(job, "正在复核输出质量，补足行业判断和执行细节");
+  const repair = await runHttpAgentCompletion(buildQualityRepairPrompt(message, workspace, raw, audit), {
+    sessionId: result.sessionId || randomUUID(),
+    onEvent: (event) => markAgentEvent(job, event),
+  });
+  if (!repair.ok || !extractAgentResult(repair.output || repair.rawOutput)) return result;
+  return {
+    ...repair,
+    durationMs: Number(result.durationMs || 0) + Number(repair.durationMs || 0),
+    qualityAudit: audit,
+    repaired: true,
+    firstOutput: raw.slice(0, 12000),
+  };
 }
 
 function splitSentences(value) {
@@ -2100,6 +2408,19 @@ async function persistAgentRunFiles(workspace, jobId, payload) {
   const root = agentWorkspaceRoot(workspace.company.id);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   await writeAgentWorkspaceFile(root, `runs/${stamp}_${jobId}.json`, jsonBlock(payload));
+  const sources = asArray(payload?.parsedResult?.sources);
+  if (sources.length) {
+    await writeAgentWorkspaceFile(
+      root,
+      "research/latest_sources.json",
+      jsonBlock({
+        version: 1,
+        generatedAt: new Date().toISOString(),
+        bossInstruction: payload?.bossInstruction || "",
+        sources,
+      }),
+    );
+  }
   await writeAgentWorkspaceFile(root, "tasks/operating_backlog.json", jsonBlock({ version: 1, generatedAt: new Date().toISOString(), tasks: operatingBacklog(workspace) }));
 }
 
@@ -2436,12 +2757,13 @@ function startClaudeJob(message, sessionSnapshot) {
       cwd: agentWorkspaceRoot(workspace.company.id),
       onEvent: (event) => markAgentEvent(job, event),
     });
-    job.durationMs = result.durationMs;
+    const finalResult = await improveAgentResultIfNeeded(message, workspace, result, job);
+    job.durationMs = finalResult.durationMs;
     job.completedAt = Date.now();
-    if (result.ok) {
+    if (finalResult.ok) {
       markAgentEvent(job, "正在把结果写回经营看板");
-      const parsed = extractAgentResult(result.output || result.rawOutput);
-      const output = await applyAgentResultToWorkspace(workspace, message, parsed, result.output || result.rawOutput || "", job);
+      const parsed = extractAgentResult(finalResult.output || finalResult.rawOutput);
+      const output = await applyAgentResultToWorkspace(workspace, message, parsed, finalResult.output || finalResult.rawOutput || "", job);
       await saveState(state);
       job.status = "done";
       job.output = output;
@@ -2449,7 +2771,7 @@ function startClaudeJob(message, sessionSnapshot) {
       markAgentEvent(job, "本次经营任务已完成");
     } else {
       job.status = "error";
-      job.error = result.error || "AI员工执行失败。";
+      job.error = finalResult.error || "AI员工执行失败。";
     }
   })().catch((error) => {
     job.status = "error";
@@ -2528,6 +2850,8 @@ async function runCompanyResearchAgent(workspace, job) {
     ...premiumBossServiceRules(),
     "",
     ...industryOperatingLens(workspace.company),
+    "",
+    ...industrySpecialistPlaybook(workspace.company),
     "",
     "新公司创建时必须产出的经营资产：",
     "1. 这家公司最可能赚钱的客户是谁，为什么现在会买。",
@@ -3320,13 +3644,14 @@ async function handleApi(req, res) {
       }
       await materializeAgentWorkspace(workspace, ownerForSession(state, session));
       const result = await runClaude(message, workspace);
-      if (result.ok) {
-        const parsed = extractAgentResult(result.output || result.rawOutput);
-        result.output = await applyAgentResultToWorkspace(workspace, message, parsed, result.output || result.rawOutput || "", null);
+      const finalResult = await improveAgentResultIfNeeded(message, workspace, result, null);
+      if (finalResult.ok) {
+        const parsed = extractAgentResult(finalResult.output || finalResult.rawOutput);
+        finalResult.output = await applyAgentResultToWorkspace(workspace, message, parsed, finalResult.output || finalResult.rawOutput || "", null);
         await saveState(state);
-        result.dashboard = publicDashboard(state, session);
+        finalResult.dashboard = publicDashboard(state, session);
       }
-      sendJson(res, result.ok ? 200 : 500, result);
+      sendJson(res, finalResult.ok ? 200 : 500, finalResult);
     } catch (error) {
       sendJson(res, 500, {
         ok: false,
