@@ -371,9 +371,92 @@ function pushActivity(state, text) {
 }
 
 function currentBudget(workspace) {
-  const budget = workspace.metrics.find((item) => item.label === "本月预算");
+  const budget = (workspace.metrics || []).find((item) => item.id === "budget_guardrail" || item.label === "本月预算" || item.label === "试跑预算" || item.label === "预算边界");
   const match = String(budget?.value || "").match(/\d+/);
   return Number(match?.[0] || 0);
+}
+
+function operatingSignalCards(company, profile = {}, budgetValue = "¥480") {
+  const kind = businessKind(company);
+  const budgetText = /可用|试跑|专业/.test(String(budgetValue || "")) ? String(budgetValue || "¥480") : `${budgetValue}可用`;
+  const packs = {
+    investment: [
+      ["project_source", "项目源雷达", "先扫FA和老关系", "20个渠道按可触达排序", "opportunity"],
+      ["screening_rule", "筛选口径", "阶段/金额/行业先定死", "避免项目越看越乱", "judgement"],
+      ["outbound_assets", "对外材料", "一页投资合作介绍", "今天可发给项目方和伙伴", "asset"],
+      ["budget_guardrail", "试跑预算", budgetText, "先花在项目验证和材料", "money"],
+    ],
+    trade: [
+      ["buyer_pipeline", "采购客户战场", "先攻复购和询价客户", "采购频率、账期、交期分层", "opportunity"],
+      ["quote_room", "报价口径", "主推品类先出两档价", "把毛利、交期和售后写清", "judgement"],
+      ["supply_assets", "产品弹药", "产品册+跟进话术", "销售可直接复制发客户", "asset"],
+      ["budget_guardrail", "试跑预算", budgetText, "先投在报价验证和客户触达", "money"],
+    ],
+    industrial: [
+      ["factory_map", "工厂客户地图", "先打老客户和周边园区", "按设备停机风险排优先级", "opportunity"],
+      ["service_offer", "巡检报价战场", "基础/标准/托管三档", "客户能一眼选方案", "judgement"],
+      ["callback_assets", "回访材料", "微信话术+巡检说明", "先问运行情况，再给方案", "asset"],
+      ["budget_guardrail", "试跑预算", budgetText, "先验证回访和报价转化", "money"],
+    ],
+    software: [
+      ["pilot_pipeline", "试点客户雷达", "先找一个可落地场景", "有预算、有痛点、有内部推动人", "opportunity"],
+      ["demo_story", "演示脚本", "用客户流程讲产品", "不要先讲功能清单", "judgement"],
+      ["sales_assets", "销售材料", "一页方案+试点清单", "方便老板直接约演示", "asset"],
+      ["budget_guardrail", "试跑预算", budgetText, "先投在试点验证", "money"],
+    ],
+    retail: [
+      ["store_traffic", "门店客流动作", "先做老客复购和到店理由", "会员、团购、短视频分开试", "opportunity"],
+      ["offer_stack", "主推套餐", "一个引流款一个利润款", "别让员工临场乱报价", "judgement"],
+      ["content_assets", "发布素材", "朋友圈+短视频脚本", "今天就能发第一版", "asset"],
+      ["budget_guardrail", "试跑预算", budgetText, "先验证到店和复购", "money"],
+    ],
+    local_service: [
+      ["lead_map", "本地客户入口", "先找高频刚需场景", "社区、老客、转介绍分开跑", "opportunity"],
+      ["service_package", "服务套餐", "基础/加急/包月三档", "报价清楚才好成交", "judgement"],
+      ["trust_assets", "信任材料", "案例、承诺、注意事项", "降低客户第一次下单顾虑", "asset"],
+      ["budget_guardrail", "试跑预算", budgetText, "先验证获客和转介绍", "money"],
+    ],
+  };
+  const fallback = [
+    ["customer_entry", "客户入口", "先找到最可能成交的人", profile.metricLead?.[2] || "把客户按购买可能性排序", "opportunity"],
+    ["offer_test", "成交试验", "主推业务先做一版报价", "三天内拿真实反馈", "judgement"],
+    ["business_assets", "业务弹药", "介绍、话术、清单先备齐", profile.doneHint || "让员工照着推进", "asset"],
+    ["budget_guardrail", "试跑预算", budgetText, "先花在客户验证", "money"],
+  ];
+  return (packs[kind] || fallback).map(([idValue, label, value, hint, tone]) => ({
+    id: idValue,
+    label,
+    value,
+    hint,
+    tone,
+  }));
+}
+
+function refreshOperatingSignals(workspace, result = {}) {
+  if (!workspace) return;
+  const metrics = Array.isArray(workspace.metrics) ? workspace.metrics : [];
+  if (!metrics.length) return;
+  const createdTasks = asArray(result?.tasksToCreate || result?.tasks);
+  const createdDocs = asArray(result?.documentsToCreate || result?.documents);
+  const approvals = asArray(result?.needsApproval);
+  const firstTask = createdTasks[0]?.title || workspace.tasks?.[0]?.title || "下一步经营动作";
+  const firstDoc = createdDocs[0]?.title || workspace.documents?.[0]?.title || "经营资料";
+  const inboxTitle = result?.inbox?.title || workspace.inbox?.title || "经营结果";
+  const first = metrics[0];
+  if (first) {
+    first.value = cleanText(inboxTitle, first.value, 24);
+    first.hint = approvals[0] ? cleanText(approvals[0], first.hint, 34) : cleanText(firstTask, first.hint, 34);
+  }
+  const second = metrics[1];
+  if (second) {
+    second.value = cleanText(firstTask, second.value, 24);
+    second.hint = "已拆成今天可推进的动作";
+  }
+  const third = metrics[2];
+  if (third) {
+    third.value = cleanText(firstDoc, third.value, 24);
+    third.hint = createdDocs.length ? "已沉淀到资料和报告" : third.hint;
+  }
 }
 
 function defaultState() {
@@ -394,10 +477,10 @@ function defaultState() {
       mood: "AI员工正在替公司推进今天的经营任务",
     },
     metrics: [
-      { label: "今日待确认", value: "3件", hint: "只看要老板拍板的事" },
-      { label: "AI已完成", value: "7件", hint: "客户、文案、官网、简报" },
-      { label: "潜在客户", value: "10家", hint: "附近工业园优先" },
-      { label: "本月预算", value: "¥480", hint: "可随时暂停" },
+      { id: "factory_map", label: "工厂客户地图", value: "先打老客户和周边园区", hint: "按设备停机风险排优先级", tone: "opportunity" },
+      { id: "service_offer", label: "巡检报价战场", value: "基础/标准/托管三档", hint: "客户能一眼选方案", tone: "judgement" },
+      { id: "callback_assets", label: "回访材料", value: "微信话术+巡检说明", hint: "先问运行情况，再给方案", tone: "asset" },
+      { id: "budget_guardrail", label: "试跑预算", value: "¥480可用", hint: "先验证回访和报价转化", tone: "money" },
     ],
     agents: [
       {
@@ -673,12 +756,7 @@ function workspaceTemplateForCompany(input, options = {}) {
   const budgetValue = options.budgetValue || "¥480";
   return ensureStrategicReportDocuments({
     company,
-    metrics: [
-      { label: "今日待确认", value: "3件", hint: "只看要老板拍板的事" },
-      { label: "AI已完成", value: "5件", hint: profile.doneHint },
-      { label: profile.metricLead[0], value: profile.metricLead[1], hint: profile.metricLead[2] },
-      { label: "本月预算", value: budgetValue, hint: "可随时暂停" },
-    ],
+    metrics: operatingSignalCards(company, profile, budgetValue),
     agents: profile.agents.map(([role, plainRole, status, progress], index) => ({
       id: `${company.id}_agent_${index + 1}`,
       role,
@@ -1393,6 +1471,13 @@ function shouldRepairClonedWorkspace(workspace) {
   return /顺达机械|设备巡检|设备维护|工业园|买过配件|巡检服务|少停机|设备是否有问题/.test(text);
 }
 
+function shouldRefreshOperatingCards(workspace) {
+  const metrics = Array.isArray(workspace?.metrics) ? workspace.metrics : [];
+  if (metrics.length < 4) return true;
+  if (metrics.some((item) => !item.id || !item.tone)) return true;
+  return metrics.some((item) => /今日待确认|AI已完成|潜在客户|本月预算/.test(item.label || ""));
+}
+
 function normalizeWorkspace(workspace) {
   const fallback = workspaceFromLegacy(defaultState());
   const company = { ...fallback.company, ...(workspace?.company || {}) };
@@ -1420,6 +1505,10 @@ function normalizeWorkspace(workspace) {
   if (shouldRepairClonedWorkspace(normalized)) {
     const budget = normalized.metrics.find((item) => item.label === "本月预算")?.value;
     return workspaceTemplateForCompany(company, { budgetValue: budget, cycleCount: normalized.cycleCount });
+  }
+  if (shouldRefreshOperatingCards(normalized)) {
+    const budget = (normalized.metrics || []).find((item) => item.id === "budget_guardrail" || item.label === "本月预算" || item.label === "试跑预算" || item.label === "预算边界")?.value || "¥480";
+    normalized.metrics = operatingSignalCards(company, profileForCompany(company), budget);
   }
   return ensureStrategicReportDocuments(normalized);
 }
@@ -1520,17 +1609,17 @@ function publicDashboard(state, session) {
       companies: [],
       owner: ownerForSession(state, session),
       metrics: [
-        { label: "企业档案", value: "待创建", hint: "先建立第一家公司" },
-        { label: "AI员工", value: "待组建", hint: "创建后自动安排" },
-        { label: "经营任务", value: "待生成", hint: "按企业业务重新生成" },
-        { label: "资料目录", value: "待建立", hint: "每家公司独立保存" },
+        { id: "setup_profile", label: "公司底稿", value: "待启动", hint: "先填名称和主营业务", tone: "asset" },
+        { id: "setup_workspace", label: "经营工作区", value: "待生成", hint: "资料、任务、报告分开建", tone: "judgement" },
+        { id: "setup_research", label: "第一轮调研", value: "待运行", hint: "创建后先跑客户和竞品资料", tone: "opportunity" },
+        { id: "setup_enter", label: "进入看板", value: "自动切换", hint: "完成后直接进新公司", tone: "money" },
       ],
       agents: [],
       tasks: [
         {
           id: "setup_company",
           title: "创建自己的企业",
-          body: "先填公司名称、主营业务和联系方式，AI会为这家公司建立经营看板。",
+          body: "填公司名称和主营业务后，AI会为这家公司建立独立经营工作区，并生成第一批任务、资料、报告和对外动作。",
           owner: "AI经营助手",
           status: "待老板填写",
           priority: "今天",
@@ -1543,8 +1632,8 @@ function publicDashboard(state, session) {
         { id: "setup_log", time: nowLabel(), text: "老板账号已准备好，等待创建第一家公司。" },
       ],
       inbox: {
-        title: "先创建自己的企业",
-        body: "当前账号还没有企业。创建企业后，AI会开始建立公司档案、经营任务和资料目录。",
+        title: "先启动自己的公司工作区",
+        body: "创建企业后，AI会开始整理客户入口、竞品动向、行业机会、经营任务和第一批老板报告。",
       },
       socialDraft: {
         title: "等待公司资料",
@@ -1744,14 +1833,64 @@ function industrySpecialistPlaybook(company) {
   return packs[kind] || packs.general;
 }
 
-function bossOutputRules() {
+function textHash(value) {
+  let hash = 0;
+  const text = String(value || "");
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+function outputStyleVariant(message = "", company = {}, seed = "") {
+  const kind = businessKind(company);
+  const variants = [
+    {
+      name: "战情推进型",
+      headings: ["现在局面", "已推进的事", "下一步打法", "老板要拍板"],
+    },
+    {
+      name: "经营复盘型",
+      headings: ["我的判断", "看到的机会", "今天安排", "风险边界"],
+    },
+    {
+      name: "项目作战型",
+      headings: ["机会清单", "卡点在哪里", "谁来推进", "验收信号"],
+    },
+    {
+      name: "销售落地型",
+      headings: ["客户切口", "成交动作", "资料弹药", "回款和交付提醒"],
+    },
+    {
+      name: "老板简报型",
+      headings: ["一句话判断", "关键依据", "本周节奏", "需要您决定"],
+    },
+  ];
+  if (kind === "investment") {
+    variants.push({
+      name: "投研推进型",
+      headings: ["机会判断", "项目源动作", "材料和尽调", "风险与拍板"],
+    });
+  }
+  if (kind === "trade" || kind === "industrial") {
+    variants.push({
+      name: "成交战场型",
+      headings: ["客户入口", "报价和交付", "员工今天做什么", "老板确认项"],
+    });
+  }
+  return variants[textHash(`${company?.id || company?.name || ""}:${message}:${seed}:${new Date().toISOString().slice(0, 10)}`) % variants.length];
+}
+
+function bossOutputRules(context = {}) {
+  const variant = outputStyleVariant(context.message, context.company, context.seed);
   return [
     "给老板看的输出标准：",
     "1. 用中文小标题分段，标题单独占一行；不要输出 #、**、``` 等 Markdown 符号。",
-    "2. 复杂问题至少写出：老板先看结论、我基于什么判断、本周动作、员工怎么分工、风险和需要老板确认。",
+    `2. 不要每次固定套“老板先看结论、我基于什么判断、本周动作”这些标题。本次可参考“${variant.name}”：${variant.headings.join("、")}；也可以按任务自然改名。`,
     "3. 报告类任务不要短：普通答复至少400到800字，经营报告通常1200到3000字，除非老板明确要求简短。",
     "4. 每段尽量短，但信息要硬：多用编号清单、动作清单、观察信号、复盘指标。",
     "5. 事实分层：已核验事实、经营推断、待核验事项要分清；没有来源不要编造URL。",
+    "6. 同一个会话里尽量变换表达方式：有时像战情简报，有时像项目推进单，有时像销售作战图，不要每次都像同一张模板。",
   ];
 }
 
@@ -1833,7 +1972,7 @@ function adaptPromptForHttpAgent(prompt) {
     "系统会把你输出的 JSON 自动写回公司看板、资料、报告和任务队列；所以请直接给出完整经营结果。",
     ...premiumBossServiceRules(),
     ...industryOperatingLens({ industry: "当前公司主营业务" }),
-    ...bossOutputRules(),
+    ...bossOutputRules({ message: prompt, company: { industry: "当前公司主营业务" } }),
     "",
     prompt,
   ].join("\n");
@@ -2081,7 +2220,7 @@ function buildPrompt(message, state) {
     "",
     ...industrySpecialistPlaybook(state.company),
     "",
-    ...bossOutputRules(),
+    ...bossOutputRules({ message, company: state.company }),
     "",
     "重要规则：",
     "1. 除非老板明确要求修改这个本地应用的文件，否则不要编辑文件。",
@@ -2117,7 +2256,7 @@ function buildAgentRunPrompt(message, workspace) {
     "",
     ...industrySpecialistPlaybook(workspace.company),
     "",
-    ...bossOutputRules(),
+    ...bossOutputRules({ message, company: workspace.company, seed: workspace.cycleCount || 0 }),
     "",
     "经营任务处理方法：",
     "1. 先判断老板真正想解决的是获客、成交、报价、交付、回款、员工安排、竞品压力、行业机会，还是老板决策负担。",
@@ -2132,10 +2271,10 @@ function buildAgentRunPrompt(message, workspace) {
     "完成后请在最后输出一个 JSON 对象，并用下面两个标记包起来。标记外可以有给老板看的自然语言，但最终系统只会读取标记内 JSON。",
     "QXB_AGENT_RESULT_START",
     "{",
-    '  "bossMessage": "给老板看的完整最终回复。不能包含 #、*、```；不要暴露技术实现；必须体现行业理解、经营判断、取舍、动作和风险；必须用3到6个单独成行的小标题和编号清单组织内容；普通问题至少400到800字，报告类建议1200到3000字",',
+    '  "bossMessage": "给老板看的完整最终回复。不能包含 #、*、```；不要暴露技术实现；必须体现行业理解、经营判断、取舍、动作和风险；必须用3到6个单独成行的小标题和编号清单组织内容；标题要按任务变化，普通问题至少400到800字，报告类建议1200到3000字",',
     '  "events": ["本次做过的关键动作，业务语言，不暴露工具名，例如：已拆解客户来源、已形成报价验证清单"],',
     '  "tasksToCreate": [{"title": "新任务", "body": "为什么要做，要解决哪个经营问题", "owner": "总经理AI/销售AI/资料AI/财务AI", "priority": "今天/本周", "nextStep": "老板确认后下一步，必须具体到动作"}],',
-    '  "documentsToCreate": [{"title": "资料名称", "type": "资料类型", "summary": "资料摘要", "content": "完整正文，报告类至少1200字；必须包含老板先看结论、行业判断、客户/竞品/机会依据、动作清单、负责人、时间节奏、风险和待老板确认事项"}],',
+    '  "documentsToCreate": [{"title": "资料名称", "type": "资料类型", "summary": "资料摘要", "content": "完整正文，报告类至少1200字；必须有清晰小标题，但标题不要固定套模板；要包含行业判断、客户/竞品/机会依据、动作清单、负责人、时间节奏、风险和待老板确认事项"}],',
     '  "agentUpdates": [{"role": "总经理AI", "status": "现在推进到哪里", "progress": 88}],',
     '  "inbox": {"title": "收件箱标题", "body": "老板需要先看的结果，必须短而有判断"},',
     '  "socialDraft": {"title": "可选，对外草稿标题", "body": "可选，对外草稿正文", "status": "草稿，未发送"},',
@@ -2177,6 +2316,16 @@ function reportLikeInstruction(message) {
   return /报告|竞争|竞品|机会|行业|项目源|客户|渠道|方案|计划|经营检查|监控|分析/.test(String(message || ""));
 }
 
+function hasStructuredBossOutput(text) {
+  const lines = String(text || "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const shortHeadings = lines.filter((line) => line.length <= 18 && /判断|局面|机会|卡点|动作|安排|节奏|资料|报告|风险|确认|拍板|客户|成交|战情|依据|信号|分工|边界|结果|打法/.test(line));
+  const numberedItems = lines.filter((line) => /^(\d+|[一二三四五六七八九十]+)[、.]/.test(line));
+  return shortHeadings.length >= 3 || numberedItems.length >= 5 || (text.match(/\n\S/g) || []).length >= 6;
+}
+
 function agentOutputQualityAudit(message, result, rawOutput) {
   const parsed = result && typeof result === "object" ? result : extractAgentResult(rawOutput);
   const bossMessage = agentResultMessage(parsed, rawOutput);
@@ -2191,7 +2340,7 @@ function agentOutputQualityAudit(message, result, rawOutput) {
       issue: needsLong ? "内容太短，不像一份老板愿意付费看的经营报告。" : "内容偏短，经营判断和动作不够完整。",
     },
     {
-      ok: (text.match(/\n\S/g) || []).length >= 4 || /老板先看结论|本周动作|需要老板确认|风险/.test(text),
+      ok: hasStructuredBossOutput(text),
       issue: "结构不够清楚，缺少单独成行的小标题或分段。",
     },
     {
@@ -2242,14 +2391,14 @@ function buildQualityRepairPrompt(message, workspace, rawOutput, audit) {
     "",
     ...industrySpecialistPlaybook(workspace.company),
     "",
-    ...bossOutputRules(),
+    ...bossOutputRules({ message, company: workspace.company, seed: workspace.cycleCount || 0 }),
     "",
     "这次不合格原因：",
     ...promptBullets(audit.issues, "内容质量不足"),
     "",
     "重写要求：",
     "1. 必须只输出 QXB_AGENT_RESULT_START 和 QXB_AGENT_RESULT_END 包裹的 JSON，不要输出其它解释。",
-    "2. bossMessage 必须有3到6个中文小标题，标题单独占一行。",
+    "2. bossMessage 必须有3到6个中文小标题，标题单独占一行；标题要按任务变化，禁止机械重复“老板先看结论/我基于什么判断/本周动作”。",
     "3. 如果是报告/客户/竞品/机会类任务，bossMessage 建议1200到3000字；documentsToCreate 里也要沉淀完整报告。",
     "4. 必须包含客户是谁、为什么买、成交或报价卡点、交付或回款风险、本周动作、负责人、老板要拍板什么。",
     "5. 没有外部来源时，sources 里标记为经营推断或待核验，不要伪造URL。",
@@ -2319,10 +2468,22 @@ function structuredSection(title, lines) {
   return `${title}\n${items.join("\n")}`;
 }
 
+function fallbackSectionTitles(seed) {
+  const variants = [
+    ["现在局面", "已整理的材料", "今天先推进", "需要老板拍板"],
+    ["一句话判断", "机会和卡点", "执行安排", "风险边界"],
+    ["战情摘要", "可直接使用的东西", "本周打法", "待核验事项"],
+    ["经营判断", "客户和资料", "员工分工", "老板确认项"],
+    ["先说结果", "依据和信号", "下一步动作", "别踩的坑"],
+  ];
+  return variants[textHash(seed) % variants.length];
+}
+
 function structureBossMessage(message, result) {
   const clean = cleanBossOutput(message);
   if (!clean) return "";
-  if (/\n/.test(clean) && /老板先看结论|马上行动清单|已经整理好的内容|建议先做|需要老板确认/.test(clean)) return clean;
+  if (/\n/.test(clean) && /老板先看结论|马上行动清单|已经整理好的内容|建议先做|需要老板确认|现在局面|一句话判断|战情摘要|经营判断|机会和卡点|执行安排|风险边界|老板确认项/.test(clean)) return clean;
+  const titles = fallbackSectionTitles(clean);
 
   const categories = clean.match(/第[一二三四五六七八九十]+类[^。！？!?]*[。！？!?]?/g) || [];
   if (categories.length >= 2) {
@@ -2337,10 +2498,10 @@ function structureBossMessage(message, result) {
       ...asArray(result?.needsApproval).slice(0, 3),
     ].slice(0, 4);
     return [
-      structuredSection("老板先看结论", [intro || splitSentences(clean)[0] || clean]),
-      structuredSection("已经整理好的内容", categories.map((item, index) => `${index + 1}. ${normalizeCategoryLine(item)}`)),
-      structuredSection("建议先做", advice.length ? advice.map((item, index) => `${index + 1}. ${item}`) : asArray(result?.tasksToCreate).slice(0, 3).map((task, index) => `${index + 1}. ${task.title || task.body}`)),
-      structuredSection("需要老板确认", approvals.map((item, index) => `${index + 1}. ${item}`)),
+      structuredSection(titles[0], [intro || splitSentences(clean)[0] || clean]),
+      structuredSection(titles[1], categories.map((item, index) => `${index + 1}. ${normalizeCategoryLine(item)}`)),
+      structuredSection(titles[2], advice.length ? advice.map((item, index) => `${index + 1}. ${item}`) : asArray(result?.tasksToCreate).slice(0, 3).map((task, index) => `${index + 1}. ${task.title || task.body}`)),
+      structuredSection(titles[3], approvals.map((item, index) => `${index + 1}. ${item}`)),
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -2358,10 +2519,10 @@ function structureBossMessage(message, result) {
     .map((item, index) => `${index + 1}. ${item}`);
   const middle = sentences.slice(2, 7).map((item, index) => `${index + 1}. ${item}`);
   return [
-    structuredSection("老板先看结论", [sentences.slice(0, 2).join("") || clean]),
-    structuredSection("已经整理好的内容", docs.length ? docs : middle),
-    structuredSection("建议先做", createdTasks.length ? createdTasks : sentences.slice(7, 10).map((item, index) => `${index + 1}. ${item}`)),
-    structuredSection("需要老板确认", approvals),
+    structuredSection(titles[0], [sentences.slice(0, 2).join("") || clean]),
+    structuredSection(titles[1], docs.length ? docs : middle),
+    structuredSection(titles[2], createdTasks.length ? createdTasks : sentences.slice(7, 10).map((item, index) => `${index + 1}. ${item}`)),
+    structuredSection(titles[3], approvals),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -2472,10 +2633,7 @@ async function applyAgentResultToWorkspace(workspace, message, result, rawOutput
     body: cleanText(result?.inbox?.body || bossMessage, bossMessage, 360),
   };
   workspace.cycleCount = Number(workspace.cycleCount || 0) + 1;
-  const doneMetric = (workspace.metrics || []).find((item) => item.label === "AI已完成");
-  if (doneMetric) doneMetric.value = `${Math.max(metricNumber(doneMetric.value), 5) + 1}件`;
-  const todoMetric = (workspace.metrics || []).find((item) => item.label === "今日待确认");
-  if (todoMetric) todoMetric.value = `${(workspace.tasks || []).filter((task) => /待|确认|建议/.test(task.status || "")).length || 1}件`;
+  refreshOperatingSignals(workspace, result);
 
   pushActivity(workspace, `AI员工已完成老板指令：${message.slice(0, 32)}。`);
   for (const approval of asArray(result?.needsApproval).slice(0, 3)) {
@@ -2783,16 +2941,57 @@ function startClaudeJob(message, sessionSnapshot) {
   return job;
 }
 
-function companyCreationStepList(companyName) {
-  return [
-    { id: "profile", title: "建立公司档案", detail: `正在为${companyName}创建独立经营工程。`, status: "pending" },
-    { id: "research", title: "查找外部资料", detail: "正在尽可能查行业、客户、竞品、渠道和机会资料。", status: "pending" },
-    { id: "market", title: "形成经营判断", detail: "正在分析客户画像、竞品压力、行业机会和本周动作。", status: "pending" },
-    { id: "departments", title: "组建AI管理层", detail: "正在安排总经理、市场、销售、运营、财务职责。", status: "pending" },
-    { id: "plan", title: "制定90天计划", detail: "正在生成销售打法、经营节奏和老板决策清单。", status: "pending" },
-    { id: "tasks", title: "生成今日任务", detail: "正在生成老板今天要看的事项、资料和待办。", status: "pending" },
-    { id: "finalize", title: "完成经营看板", detail: "正在保存公司工程并切换到新看板。", status: "pending" },
+function companyCreationStepList(input) {
+  const company = typeof input === "object" && input ? input : { name: String(input || "新公司"), industry: "" };
+  const companyName = company.name || "新公司";
+  const kind = businessKind(company);
+  const stage = (idValue, lane, title, detail, events) => ({
+    id: idValue,
+    lane,
+    title,
+    detail,
+    events,
+    status: "pending",
+  });
+  const packs = {
+    investment: [
+      stage("profile", "立项", "打开投资工作区", `正在为${companyName}建立项目源、材料和决策记录目录。`, ["创建项目源目录", "写入投资偏好草稿", "隔离老板账号空间"]),
+      stage("research", "项目源", "扫描项目来源渠道", "正在梳理FA、券商、产业园、律所、老关系和公开项目入口。", ["拆分项目来源", "标记可触达渠道", "准备第一轮外部核验"]),
+      stage("market", "投研", "压缩机会判断", "正在把行业机会、资金偏好、估值压力和退出风险压成老板能用的判断。", ["整理行业机会", "识别资金方偏好", "写风险边界"]),
+      stage("departments", "班底", "分配投研和项目角色", "正在安排项目AI、材料AI、财务AI和总经理AI的分工。", ["安排项目AI", "分配材料AI", "设置资金提醒"]),
+      stage("plan", "打法", "制定30天项目推进法", "正在生成项目筛选表、对外介绍、跟进节奏和拍板问题。", ["生成项目筛选口径", "准备对外介绍", "列拍板问题"]),
+      stage("tasks", "交付", "生成第一批项目动作", "正在生成项目源清单、跟进话术、竞品/行业机会报告和老板待确认事项。", ["写项目来源清单", "生成跟进话术", "整理待确认事项"]),
+      stage("finalize", "上线", "进入投资驾驶舱", "正在保存投资工作区，并切换到新公司看板。", ["保存经营资料", "检查账号隔离", "准备进入看板"]),
+    ],
+    trade: [
+      stage("profile", "开盘", "建立贸易作战室", `正在为${companyName}建立客户、货源、报价和回款目录。`, ["创建贸易工作区", "写入主营品类", "隔离老板账号空间"]),
+      stage("research", "客户", "扫采购客户和渠道", "正在查采购方、渠道商、复购客户、竞品报价和交付条件。", ["拆采购客户类型", "整理货源线索", "扫描竞品报价"]),
+      stage("market", "报价", "形成报价和交付判断", "正在分析客户买点、价格带、账期、交期和最低毛利边界。", ["压报价口径", "识别交期风险", "标记回款节点"]),
+      stage("departments", "员工", "安排销售和资料分工", "正在安排销售AI、资料AI、财务AI和总经理AI各自接手任务。", ["安排销售AI", "准备产品资料", "设置回款提醒"]),
+      stage("plan", "节奏", "制定7天成交试跑", "正在生成客户跟进节奏、报价单、产品介绍和老板拍板项。", ["生成7天跟进表", "准备报价单", "列报价底线"]),
+      stage("tasks", "执行", "生成今日成交动作", "正在生成采购客户名单、跟进话术、报价材料和待确认事项。", ["整理采购客户名单", "写跟进消息", "生成报价材料"]),
+      stage("finalize", "上线", "进入贸易看板", "正在保存贸易工作区，并切换到新公司看板。", ["保存资料", "检查账号隔离", "准备进入看板"]),
+    ],
+    industrial: [
+      stage("profile", "开工", "建立服务经营台", `正在为${companyName}建立工厂客户、巡检报价和老客户回访目录。`, ["创建服务工作区", "写入设备服务范围", "隔离老板账号空间"]),
+      stage("research", "园区", "扫描周边工厂入口", "正在整理老客户、工业园、设备停机痛点、竞品服务和可切入场景。", ["拆工厂客户类型", "扫描园区入口", "准备回访素材"]),
+      stage("market", "成交", "判断客户为什么会买", "正在分析停机损失、巡检频率、报价档位、交付承诺和回款风险。", ["估算停机痛点", "拆报价档位", "标记交付风险"]),
+      stage("departments", "班组", "安排销售和交付职责", "正在安排总经理AI、销售AI、资料AI、财务AI各自推进。", ["安排销售AI", "分配资料AI", "设置收款提醒"]),
+      stage("plan", "打法", "制定老客回访打法", "正在生成回访话术、巡检方案、报价卡和本周跟进节奏。", ["写回访话术", "生成巡检方案", "列报价底线"]),
+      stage("tasks", "执行", "生成今日经营动作", "正在生成老客户回访、周边工厂名单、报价草稿和老板待确认事项。", ["整理工厂名单", "生成报价草稿", "排今天动作"]),
+      stage("finalize", "上线", "进入服务看板", "正在保存服务工作区，并切换到新公司看板。", ["保存资料", "检查账号隔离", "准备进入看板"]),
+    ],
+  };
+  const fallback = [
+    stage("profile", "开局", "建立独立经营工作区", `正在为${companyName}建立公司资料、任务、报告和决策目录。`, ["创建公司工作区", "写入主营业务", "隔离老板账号空间"]),
+    stage("research", "资料", "收集外部资料和客户入口", "正在整理行业资料、客户画像、竞品压力、渠道入口和机会线索。", ["检索行业资料", "拆客户画像", "扫描竞品和替代方案"]),
+    stage("market", "判断", "形成第一版经营判断", "正在把资料压成客户切口、成交动作、风险边界和老板拍板项。", ["压缩经营判断", "识别成交阻力", "标记本周机会"]),
+    stage("departments", "分工", "组建AI经营班底", "正在安排总经理、销售、资料、运营和财务角色。", ["安排总经理AI", "分配销售AI", "设置财务提醒"]),
+    stage("plan", "节奏", "制定第一轮业务节奏", "正在生成销售打法、资料清单、报告主题和本周验证动作。", ["生成业务节奏", "准备资料清单", "列验证动作"]),
+    stage("tasks", "交付", "生成任务、报告和营销动作", "正在生成今日任务、经营报告、对外介绍和待确认事项。", ["写经营报告", "生成营销草稿", "整理待确认事项"]),
+    stage("finalize", "上线", "进入新公司工作台", "正在保存公司工程并切换到新看板。", ["保存工作区", "检查账号隔离", "准备进入看板"]),
   ];
+  return packs[kind] || fallback;
 }
 
 function delay(ms) {
@@ -2854,12 +3053,12 @@ async function runCompanyResearchAgent(workspace, job) {
     ...industrySpecialistPlaybook(workspace.company),
     "",
     "新公司创建时必须产出的经营资产：",
-    "1. 这家公司最可能赚钱的客户是谁，为什么现在会买。",
-    "2. 第一批应该找哪些客户或渠道，第一句话怎么说。",
-    "3. 竞品或替代方案会从哪里抢客户，我们怎么反制。",
-    "4. 本周最小验证动作：找几个客户、问什么问题、几天看结果。",
-    "5. 90天计划：前7天建档验证，30天跑通成交动作，90天形成稳定节奏。",
-    "6. 老板需要拍板的事项：主推业务、预算、人手、报价底线、对外承诺边界。",
+    "1. 按这家公司行业生成真实的经营资产名称，不要固定叫同一套栏目；投资公司可以是项目源雷达、投研底稿、合作介绍，贸易公司可以是采购客户表、报价口径、交期回款清单。",
+    "2. 必须说清最可能赚钱的客户或项目是谁，为什么现在会买或愿意合作。",
+    "3. 第一批应该找哪些客户、项目源或渠道，第一句话怎么说。",
+    "4. 竞品或替代方案会从哪里抢客户，我们怎么反制。",
+    "5. 本周最小验证动作：找几个客户或项目、问什么问题、几天看结果。",
+    "6. 老板需要拍板的事项：主推业务、预算、人手、报价或合作底线、对外承诺边界。",
     "",
     "公司基础信息：",
     `公司名：${workspace.company.name}`,
@@ -2890,7 +3089,7 @@ async function runCompanyResearchAgent(workspace, job) {
   return result.output.slice(0, 10000);
 }
 
-function startCompanyCreationJob({ companyId, companyName, companySlug, sessionSnapshot }) {
+function startCompanyCreationJob({ companyId, companyName, companySlug, companyProfile, sessionSnapshot }) {
   cleanupCompanyCreationJobs();
   const job = {
     id: id("company_job"),
@@ -2898,7 +3097,7 @@ function startCompanyCreationJob({ companyId, companyName, companySlug, sessionS
     activeStep: "profile",
     companyId,
     userAccount: sessionSnapshot?.userAccount || "",
-    steps: companyCreationStepList(companyName || "新公司"),
+    steps: companyCreationStepList(companyProfile || { name: companyName || "新公司" }),
     activeEvent: `正在为${companyName || "新公司"}打开AI工作区`,
     events: [],
     redirectTo: `/dashboard/${companySlug || "fitscope"}`,
@@ -3287,6 +3486,7 @@ async function handleApi(req, res) {
         companyId: workspace.company.id,
         companyName: workspace.company.name,
         companySlug: workspace.company.slug,
+        companyProfile: workspace.company,
         sessionSnapshot,
       });
       sendJson(res, 202, {
@@ -3408,10 +3608,10 @@ async function handleApi(req, res) {
       return;
     }
     const amount = Math.max(10, Math.min(9999, Number(body.amount) || 100));
-    const budget = workspace.metrics.find((item) => item.label === "本月预算");
+    const budget = (workspace.metrics || []).find((item) => item.id === "budget_guardrail" || item.label === "本月预算" || item.label === "试跑预算" || item.label === "预算边界");
     if (budget) {
-      budget.value = `¥${currentBudget(workspace) + amount}`;
-      budget.hint = "已增加可用次数";
+      budget.value = `¥${currentBudget(workspace) + amount}可用`;
+      budget.hint = "优先用于客户验证和报告整理";
     }
     pushActivity(workspace, `老板给AI员工充值了¥${amount}预算。`);
     workspace.inbox = {
@@ -3430,8 +3630,11 @@ async function handleApi(req, res) {
       sendCompanyRequired(res);
       return;
     }
-    const budget = workspace.metrics.find((item) => item.label === "本月预算");
-    if (budget) budget.hint = "专业版试用中";
+    const budget = (workspace.metrics || []).find((item) => item.id === "budget_guardrail" || item.label === "本月预算" || item.label === "试跑预算" || item.label === "预算边界");
+    if (budget) {
+      budget.value = "专业版试跑";
+      budget.hint = "可以同时推进客户、资料和报告";
+    }
     workspace.company.mood = "专业版已开通试用，AI员工可以同时推进客户、资料、官网和收款准备。";
     workspace.inbox = {
       title: "专业版试用已开通",
@@ -3568,7 +3771,11 @@ async function handleApi(req, res) {
     });
     workspace.tasks = workspace.tasks.slice(0, 8);
     pushActivity(workspace, `AI员工完成一轮检查：${title}。`);
-    workspace.metrics[1].value = `${7 + workspace.cycleCount}件`;
+    refreshOperatingSignals(workspace, {
+      tasksToCreate: [{ title, body, owner }],
+      documentsToCreate: workspace.documents?.slice(0, 1) || [],
+      inbox: { title: "新经营动作已排好" },
+    });
     await saveState(state);
     sendJson(res, 200, { ok: true, dashboard: publicDashboard(state, session) });
     return;

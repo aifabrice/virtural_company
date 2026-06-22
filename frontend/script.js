@@ -15,10 +15,10 @@ const fallbackDashboard = {
     mood: "AI员工正在替公司推进今天的经营任务",
   },
   metrics: [
-    { label: "今日待确认", value: "3件", hint: "只看要老板拍板的事" },
-    { label: "AI已完成", value: "7件", hint: "客户、文案、官网、简报" },
-    { label: "潜在客户", value: "10家", hint: "附近工业园优先" },
-    { label: "本月预算", value: "¥480", hint: "可随时暂停" },
+    { id: "factory_map", label: "工厂客户地图", value: "先打老客户和周边园区", hint: "按设备停机风险排优先级", tone: "opportunity" },
+    { id: "service_offer", label: "巡检报价战场", value: "基础/标准/托管三档", hint: "客户能一眼选方案", tone: "judgement" },
+    { id: "callback_assets", label: "回访材料", value: "微信话术+巡检说明", hint: "先问运行情况，再给方案", tone: "asset" },
+    { id: "budget_guardrail", label: "试跑预算", value: "¥480可用", hint: "先验证回访和报价转化", tone: "money" },
   ],
   agents: [
     { id: "agent_boss", role: "总经理AI", plainRole: "帮老板定顺序", status: "正在安排今天最重要的三件事", progress: 76 },
@@ -96,10 +96,10 @@ const setupDashboard = {
   company: null,
   companies: [],
   metrics: [
-    { label: "企业档案", value: "待创建", hint: "先建立第一家公司" },
-    { label: "AI员工", value: "待组建", hint: "创建后自动安排" },
-    { label: "经营任务", value: "待生成", hint: "按企业业务生成" },
-    { label: "资料目录", value: "待建立", hint: "每家公司独立保存" },
+    { id: "setup_profile", label: "公司底稿", value: "待启动", hint: "先填名称和主营业务", tone: "asset" },
+    { id: "setup_workspace", label: "经营工作区", value: "待生成", hint: "资料、任务、报告分开建", tone: "judgement" },
+    { id: "setup_research", label: "第一轮调研", value: "待运行", hint: "创建后先跑客户和竞品资料", tone: "opportunity" },
+    { id: "setup_enter", label: "进入看板", value: "自动切换", hint: "完成后直接进新公司", tone: "money" },
   ],
   agents: [],
   tasks: [
@@ -285,6 +285,32 @@ function normalizeMessageStructure(value, sectionNames) {
     "先看结论",
     "结论",
     "经营判断",
+    "现在局面",
+    "一句话判断",
+    "战情摘要",
+    "机会清单",
+    "机会和卡点",
+    "客户入口",
+    "客户切口",
+    "成交动作",
+    "成交战场",
+    "报价和交付",
+    "资料弹药",
+    "已推进的事",
+    "可直接使用的东西",
+    "依据和信号",
+    "关键依据",
+    "执行安排",
+    "员工今天做什么",
+    "谁来推进",
+    "老板确认项",
+    "需要您决定",
+    "待核验事项",
+    "风险边界",
+    "别踩的坑",
+    "验收信号",
+    "本周节奏",
+    "本周打法",
     "我查到的情况",
     "关键问题",
     "今天发现的问题",
@@ -347,6 +373,32 @@ function renderMessageText(value) {
     "行业机会",
     "我的判断",
     "经营判断",
+    "现在局面",
+    "一句话判断",
+    "战情摘要",
+    "机会清单",
+    "机会和卡点",
+    "客户入口",
+    "客户切口",
+    "成交动作",
+    "成交战场",
+    "报价和交付",
+    "资料弹药",
+    "已推进的事",
+    "可直接使用的东西",
+    "依据和信号",
+    "关键依据",
+    "执行安排",
+    "员工今天做什么",
+    "谁来推进",
+    "老板确认项",
+    "需要您决定",
+    "待核验事项",
+    "风险边界",
+    "别踩的坑",
+    "验收信号",
+    "本周节奏",
+    "本周打法",
     "我查到的情况",
     "关键问题",
     "今天发现的问题",
@@ -424,7 +476,7 @@ function renderMessageText(value) {
     const boldHeading = line.match(/^\*\*(.+)\*\*$/) || line.match(/^__(.+)__$/);
     const sectionHeading = line.match(new RegExp(`^(?:[一二三四五六七八九十]+[、.]|\\d+[、.])?\\s*(${sectionNames.join("|")})\\s*[:：]?$`));
     const sectionWithText = line.match(new RegExp(`^(?:[一二三四五六七八九十]+[、.]|\\d+[、.])?\\s*(${sectionNames.join("|")})\\s*[:：]\\s*(.+)$`));
-    const inferredHeading = line.length <= 18 && /判断|结论|问题|动作|建议|安排|资料|报告|风险|确认|机会|执行|复盘/.test(line);
+    const inferredHeading = line.length <= 18 && /判断|结论|问题|动作|建议|安排|资料|报告|风险|确认|机会|执行|复盘|局面|战情|客户|成交|报价|交付|卡点|信号|边界|打法|拍板/.test(line);
     const bullet = line.match(/^[-*•]\s+(.+)$/);
     const numbered = line.match(/^\d+[.、)]\s+(.+)$/);
     const chineseNumbered = line.match(/^[一二三四五六七八九十]+[、.]\s*(.+)$/);
@@ -667,8 +719,8 @@ function renderDashboard(data) {
 
   els.metricGrid.innerHTML = metrics
     .map(
-      (item) => `<article class="metric-card">
-        <span>${escapeHtml(item.label)}</span>
+      (item) => `<article class="metric-card" data-tone="${escapeHtml(String(item.tone || "work").replace(/[^a-z0-9_-]/gi, ""))}">
+        <span class="metric-label">${escapeHtml(item.label)}</span>
         <strong>${escapeHtml(item.value)}</strong>
         <small>${escapeHtml(item.hint)}</small>
       </article>`,
@@ -845,7 +897,7 @@ async function submitAuth() {
 }
 
 function moneyMetric() {
-  return dashboardState.metrics?.find((item) => item.label === "本月预算")?.value || "¥0";
+  return dashboardState.metrics?.find((item) => item.id === "budget_guardrail" || item.label === "本月预算" || item.label === "试跑预算" || item.label === "预算边界")?.value || "¥0";
 }
 
 function companyKind(company) {
@@ -1320,16 +1372,17 @@ function creationStepId(job, steps) {
   return job.activeStep || steps.find((step) => step.status === "running")?.id || steps.find((step) => step.status !== "done")?.id || "finalize";
 }
 
-function creationMessageFor(stepId) {
-  const pool = creationEventCopy[stepId] || creationEventCopy.profile;
+function creationMessageFor(stepId, step) {
+  const pool = (Array.isArray(step?.events) && step.events.length ? step.events : creationEventCopy[stepId]) || creationEventCopy.profile;
   const text = pool[creationMotion.tick % pool.length];
   creationMotion.tick += 1;
   return text;
 }
 
-function updateCreationEvents(job, stepId) {
+function updateCreationEvents(job, step) {
   const now = Date.now();
   const jobId = job.jobId || "local-start";
+  const stepId = step?.id || "profile";
   if (creationMotion.jobId && creationMotion.jobId !== jobId) {
     resetCreationMotion(creationMotion.companyName);
   }
@@ -1352,7 +1405,7 @@ function updateCreationEvents(job, stepId) {
   } else if (!(job.events || []).length && now - creationMotion.lastEventAt > 850) {
     creationMotion.events.push({
       time: new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date()),
-      text: creationMessageFor(stepId),
+      text: creationMessageFor(stepId, step),
     });
     creationMotion.lastEventAt = now;
   }
@@ -1371,19 +1424,24 @@ function renderCompanyCreationProgress(job) {
   const steps = job.steps?.length
     ? job.steps
     : [
-        { id: "profile", title: "建立公司档案", detail: "正在创建公司经营入口。", status: "running" },
-        { id: "research", title: "查找外部资料", detail: "等待AI员工查资料。", status: "pending" },
-        { id: "market", title: "形成经营判断", detail: "等待整理客户画像和竞品。", status: "pending" },
-        { id: "departments", title: "组建AI管理层", detail: "等待分配职责。", status: "pending" },
-        { id: "plan", title: "制定90天计划", detail: "等待生成经营节奏。", status: "pending" },
-        { id: "tasks", title: "生成今日任务", detail: "等待生成待办和资料。", status: "pending" },
-        { id: "finalize", title: "完成经营看板", detail: "等待进入新公司。", status: "pending" },
+        { id: "profile", lane: "开局", title: "打开独立经营工作区", detail: "正在创建资料、任务、报告和决策目录。", status: "running" },
+        { id: "research", lane: "资料", title: "收集外部资料和客户入口", detail: "等待整理行业、客户、竞品和渠道线索。", status: "pending" },
+        { id: "market", lane: "判断", title: "压缩第一版经营判断", detail: "等待形成客户切口、成交动作和风险边界。", status: "pending" },
+        { id: "departments", lane: "分工", title: "安排AI经营班底", detail: "等待分配销售、资料、财务和总经理职责。", status: "pending" },
+        { id: "plan", lane: "节奏", title: "生成第一轮业务节奏", detail: "等待生成销售打法、资料清单和验证动作。", status: "pending" },
+        { id: "tasks", lane: "交付", title: "产出任务、报告和营销动作", detail: "等待写入经营报告、对外介绍和待确认事项。", status: "pending" },
+        { id: "finalize", lane: "上线", title: "进入新公司工作台", detail: "等待保存并切换到新公司。", status: "pending" },
       ];
   const doneCount = steps.filter((step) => step.status === "done").length;
   const progress = Math.round((doneCount / Math.max(steps.length, 1)) * 100);
   const activeStepId = creationStepId(job, steps);
-  const activeMeta = creationStageMeta[activeStepId] || creationStageMeta.profile;
-  updateCreationEvents(job, activeStepId);
+  const activeStep = steps.find((step) => step.id === activeStepId) || steps[0] || {};
+  const activeMeta = {
+    ...(creationStageMeta[activeStepId] || creationStageMeta.profile),
+    ...activeStep,
+    lane: activeStep.lane || creationStageMeta[activeStepId]?.lane || creationStageMeta.profile.lane,
+  };
+  updateCreationEvents(job, activeStep);
   const statusText =
     job.status === "done"
       ? "新公司已经建好"
@@ -1402,7 +1460,7 @@ function renderCompanyCreationProgress(job) {
             : "pending";
     return {
       ...step,
-      lane: meta.lane,
+      lane: step.lane || meta.lane,
       state,
     };
   });
@@ -1434,7 +1492,7 @@ function renderCompanyCreationProgress(job) {
             <b>${escapeHtml(step.lane)}</b>
             <div>
               <strong>${escapeHtml(step.title || "")}</strong>
-              <span>${step.state === "done" ? "已完成" : step.state === "active" ? "正在处理" : "排队中"}</span>
+              <span>${escapeHtml(step.state === "done" ? "已完成" : step.state === "active" ? (step.detail || "正在处理") : "排队中")}</span>
             </div>
           </article>`,
         )

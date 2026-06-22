@@ -401,25 +401,60 @@ h1, h2 { margin: 0; line-height: 1.12; text-wrap: balance; letter-spacing: 0; }
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--gap);
+  gap: 10px;
 }
 .metric-card {
-  padding: 14px;
-  min-height: 102px;
+  position: relative;
+  overflow: hidden;
+  padding: 13px 14px 12px;
+  min-height: 112px;
+  border-color: rgba(55, 40, 24, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 247, 0.94), rgba(246, 240, 227, 0.72)),
+    var(--surface);
 }
-.metric-card span, .metric-card small {
+.metric-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: var(--accent);
+  opacity: 0.8;
+}
+.metric-card[data-tone="opportunity"]::before { background: oklch(0.55 0.11 152); }
+.metric-card[data-tone="judgement"]::before { background: oklch(0.52 0.12 45); }
+.metric-card[data-tone="asset"]::before { background: oklch(0.47 0.08 240); }
+.metric-card[data-tone="money"]::before { background: oklch(0.48 0.1 100); }
+.metric-card .metric-label {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  border-radius: 999px;
+  background: rgba(55, 40, 24, 0.08);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 5px 8px;
+}
+.metric-card small {
   display: block;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.45;
 }
 .metric-card strong {
   display: block;
-  margin: 8px 0 6px;
-  font-family: var(--serif);
-  font-size: 28px;
-  line-height: 1;
+  margin: 12px 0 8px;
+  font-family: var(--sans);
+  font-size: 17px;
+  line-height: 1.28;
+  letter-spacing: 0;
 }
-.metric-card small { font-size: 13px; }
 .panel { padding: 14px; }
 .section-head {
   display: flex;
@@ -1279,6 +1314,7 @@ textarea::placeholder { color: oklch(0.58 0.02 72); }
   border-radius: 9px;
   background: rgba(255, 253, 247, 0.76);
   padding: 10px;
+  min-height: 108px;
 }
 .creation-lane b {
   width: max-content;
@@ -1291,13 +1327,18 @@ textarea::placeholder { color: oklch(0.58 0.02 72); }
 }
 .creation-lane strong {
   display: block;
-  min-height: 34px;
+  min-height: 0;
   font-size: 14px;
   line-height: 1.25;
 }
 .creation-lane span {
   color: var(--muted);
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   font-size: 12px;
+  line-height: 1.45;
 }
 .creation-lane.active {
   border-color: rgba(222, 92, 38, 0.45);
