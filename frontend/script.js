@@ -1576,7 +1576,7 @@ function hideCompanyCreationProgress(delayMs = 0) {
 }
 
 function setAIStatus(message, state = "") {
-  els.agentStatus.textContent = message;
+  els.agentStatus.textContent = state === "ready" ? "" : message;
   els.agentStatus.className = `agent-status ${state}`.trim();
 }
 
