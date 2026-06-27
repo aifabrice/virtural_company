@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>企小帮 - 中文AI公司经营系统</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3" />
-    <link rel="stylesheet" href="styles.css?v=11" />
+    <link rel="stylesheet" href="styles.css?v=12" />
   </head>
   <body>
     <section class="login-view" id="loginView" aria-label="老板入口">
@@ -156,32 +156,25 @@
         </main>
 
         <aside class="chat-panel" id="chatPanel" aria-label="老板指令输入区">
-          <div class="surprise-chip">
-            <button class="close-chat" id="closeChat" type="button" aria-label="收起助手">×</button>
-          </div>
-          <div class="quick-actions" aria-label="常用指令">
-            <button type="button" data-quick="帮我找10个适合公司业务的潜在客户">找10个客户</button>
-            <button type="button" data-quick="帮我写一条客户跟进消息">写跟进消息</button>
-            <button type="button" data-quick="帮我做一份服务方案和报价">做方案报价</button>
-            <button type="button" data-quick="帮我把今天员工要做的事列出来">安排员工</button>
-          </div>
           <div class="agent-console" aria-live="polite">
             <div class="agent-console-head">
               <div>
                 <strong>AI经营助手</strong>
                 <span id="agentStatus">正在检查状态</span>
               </div>
-              <button class="text-button" id="clearConversation" type="button">清空</button>
+              <div class="agent-console-actions">
+                <button class="text-button" id="clearConversation" type="button">清空</button>
+                <button class="close-chat" id="closeChat" type="button" aria-label="收起助手">×</button>
+              </div>
             </div>
             <div class="message-list" id="agentMessages"></div>
+            <form class="composer" id="composer">
+              <label class="attach" for="imageInput" aria-label="上传图片">+</label>
+              <input id="imageInput" type="file" accept="image/*" hidden />
+              <textarea id="chatInput" rows="1" placeholder="直接说：帮我做什么"></textarea>
+              <button class="bevel" id="sendButton" type="submit" disabled>发送</button>
+            </form>
           </div>
-          <div class="chat-spacer"></div>
-          <form class="composer" id="composer">
-            <label class="attach" for="imageInput" aria-label="上传图片">+</label>
-            <input id="imageInput" type="file" accept="image/*" hidden />
-            <textarea id="chatInput" rows="1" placeholder="直接说：帮我做什么"></textarea>
-            <button class="bevel" id="sendButton" type="submit" disabled>发送</button>
-          </form>
         </aside>
 
         <button class="open-inbox" id="openInbox" type="button" aria-label="打开助手"></button>
@@ -214,6 +207,6 @@
 
     <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
-    <script src="script.js?v=11"></script>
+    <script src="script.js?v=12"></script>
   </body>
 </html>
