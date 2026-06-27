@@ -215,6 +215,8 @@ let modalCopyText = "";
 let drawerCopyText = "";
 let drawerDocumentId = "";
 let currentView = "today";
+let showAllDocuments = false;
+let showAllTasks = false;
 let conversationMessages = [];
 let conversationCompanyId = "";
 let authMode = "login";
@@ -358,6 +360,33 @@ function renderDocumentGroups(documents) {
       </section>`,
     )
     .join("");
+}
+
+function renderSectionMore(kind, hiddenCount, expanded) {
+  if (!hiddenCount && !expanded) return "";
+  const label = expanded ? "收起" : `更多${hiddenCount ? ` ${hiddenCount} 项` : ""}`;
+  return `<div class="section-more">
+    <button type="button" data-show-more="${escapeHtml(kind)}" aria-expanded="${expanded ? "true" : "false"}">${label}</button>
+  </div>`;
+}
+
+function renderTaskCard(task) {
+  return `<article class="task-card" data-task="${escapeHtml(task.id)}" tabindex="0">
+    <div class="task-top">
+      <strong>${escapeHtml(task.title)}</strong>
+      <span class="tag ${task.priority === "今天" ? "urgent" : ""}">${escapeHtml(task.priority)}</span>
+    </div>
+    <p>${escapeHtml(task.body)}</p>
+    <div class="task-meta">
+      <span>${escapeHtml(task.owner)}</span>
+      <span>${escapeHtml(task.status)}</span>
+    </div>
+    <div class="task-actions" aria-label="处理这个事项">
+      <button type="button" data-task-choice="confirm" data-task-id="${escapeHtml(task.id)}">同意</button>
+      <button type="button" data-task-choice="agent" data-task-id="${escapeHtml(task.id)}">交给AI</button>
+      <button type="button" data-task-choice="pause" data-task-id="${escapeHtml(task.id)}">先不做</button>
+    </div>
+  </article>`;
 }
 
 function renderInlineMarkdown(value) {
@@ -807,6 +836,8 @@ function renderDashboard(data) {
   if (activeConversationId && conversationCompanyId !== activeConversationId) {
     conversationCompanyId = activeConversationId;
     conversationMessages = [];
+    showAllDocuments = false;
+    showAllTasks = false;
   }
 
   if (els.companySlug) els.companySlug.textContent = "";
@@ -865,6 +896,13 @@ function renderDashboard(data) {
         <p>系统会按主营业务安排总经理、销售、市场、运营和财务角色。</p>
       </article>`;
 
+  const taskPreviewLimit = 3;
+  const documentPreviewLimit = 2;
+  const visibleTasks = showAllTasks ? tasks : tasks.slice(0, taskPreviewLimit);
+  const visibleDocuments = showAllDocuments ? documents : documents.slice(0, documentPreviewLimit);
+  const hiddenTaskCount = Math.max(0, tasks.length - visibleTasks.length);
+  const hiddenDocumentCount = Math.max(0, documents.length - visibleDocuments.length);
+
   els.taskList.innerHTML = setupMode
     ? `<article class="task-card setup-card" tabindex="0">
         <div class="task-top">
@@ -874,29 +912,10 @@ function renderDashboard(data) {
         <p>新账号不会进入别人的公司。填好企业名称和主营业务后，AI会建立独立经营看板。</p>
         <div class="task-actions"><button type="button" data-modal="newCompany">新建公司</button></div>
       </article>`
-    : tasks
-      .map(
-        (task) => `<article class="task-card" data-task="${escapeHtml(task.id)}" tabindex="0">
-        <div class="task-top">
-          <strong>${escapeHtml(task.title)}</strong>
-          <span class="tag ${task.priority === "今天" ? "urgent" : ""}">${escapeHtml(task.priority)}</span>
-        </div>
-        <p>${escapeHtml(task.body)}</p>
-        <div class="task-meta">
-          <span>${escapeHtml(task.owner)}</span>
-          <span>${escapeHtml(task.status)}</span>
-        </div>
-        <div class="task-actions" aria-label="处理这个事项">
-          <button type="button" data-task-choice="confirm" data-task-id="${escapeHtml(task.id)}">同意</button>
-          <button type="button" data-task-choice="agent" data-task-id="${escapeHtml(task.id)}">交给AI</button>
-          <button type="button" data-task-choice="pause" data-task-id="${escapeHtml(task.id)}">先不做</button>
-        </div>
-      </article>`,
-      )
-      .join("");
+    : `${visibleTasks.map(renderTaskCard).join("")}${renderSectionMore("tasks", hiddenTaskCount, showAllTasks && tasks.length > taskPreviewLimit)}`;
 
   els.docList.innerHTML = documents.length
-    ? renderDocumentGroups(documents)
+    ? `${renderDocumentGroups(visibleDocuments)}${renderSectionMore("documents", hiddenDocumentCount, showAllDocuments && documents.length > documentPreviewLimit)}`
     : `<article class="soft-card compact"><strong>资料待生成</strong><p>创建企业后，AI会生成公司档案、销售打法、90天计划和今日简报。</p></article>`;
 
   els.channelList.innerHTML = channels.length
@@ -2049,6 +2068,14 @@ function initEvents() {
     const viewNode = target.closest("button[data-view]");
     if (viewNode) {
       setDashboardView(viewNode.dataset.view);
+      return;
+    }
+
+    const showMoreNode = target.closest("[data-show-more]");
+    if (showMoreNode) {
+      if (showMoreNode.dataset.showMore === "documents") showAllDocuments = !showAllDocuments;
+      if (showMoreNode.dataset.showMore === "tasks") showAllTasks = !showAllTasks;
+      renderDashboard(dashboardState);
       return;
     }
 

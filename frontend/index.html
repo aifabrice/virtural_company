@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>企小帮 - 中文AI公司经营系统</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3" />
-    <link rel="stylesheet" href="styles.css?v=16" />
+    <link rel="stylesheet" href="styles.css?v=17" />
   </head>
   <body>
     <section class="login-view" id="loginView" aria-label="老板入口">
@@ -119,20 +119,20 @@
             <div class="agent-list" id="agentList"></div>
           </section>
 
-          <section class="panel" id="tasks" data-view-panel="today">
+          <section class="panel deliverable-panel" id="reports" data-view-panel="today">
             <div class="section-head">
-              <h2>待老板决策</h2>
-              <span class="meta">任务、拍板事项和下一步动作</span>
-            </div>
-            <div class="task-list" id="taskList"></div>
-          </section>
-
-          <section class="panel deliverable-panel" data-view-panel="today">
-            <div class="section-head">
-              <h2>AI产出物</h2>
+              <h2>报告</h2>
               <span class="meta" id="updatedAt">正在更新</span>
             </div>
             <div class="doc-list" id="docList"></div>
+          </section>
+
+          <section class="panel" id="tasks" data-view-panel="today">
+            <div class="section-head">
+              <h2>任务</h2>
+              <span class="meta">待确认、执行中和下一步动作</span>
+            </div>
+            <div class="task-list" id="taskList"></div>
           </section>
 
           <section class="panel" id="channels" data-view-panel="channels">
@@ -206,6 +206,6 @@
 
     <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
-    <script src="script.js?v=16"></script>
+    <script src="script.js?v=17"></script>
   </body>
 </html>

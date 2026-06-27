@@ -3826,6 +3826,7 @@ textarea {
   display: none;
 }
 
+#reports[data-view-panel="today"],
 #tasks[data-view-panel="today"] {
   grid-column: 1 / -1;
 }
@@ -3838,6 +3839,33 @@ textarea {
 .deliverable-panel .doc-list {
   grid-template-columns: 1fr;
   gap: 18px;
+}
+
+.section-more {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: center;
+  padding-top: 2px;
+}
+
+.section-more button {
+  min-height: 32px;
+  border: 1px solid var(--ink-200);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--ink-700);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 720;
+  padding: 7px 16px;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.section-more button:hover {
+  border-color: var(--brand-200);
+  background: var(--brand-50);
+  color: var(--brand-700);
+  transform: translateY(-1px);
 }
 
 .doc-category {
