@@ -4200,3 +4200,59 @@ textarea {
     padding: 14px;
   }
 }
+
+/* Keep report-card footer actions separate from summary text */
+#reports .doc-button,
+#reports .deliverable-panel .doc-button,
+#reports .doc-category-grid .doc-button {
+  min-height: 150px;
+  padding: 14px 16px 42px 18px;
+}
+
+#reports .doc-content {
+  gap: 6px;
+  min-width: 0;
+}
+
+#reports .doc-content small {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+#reports .doc-button::after {
+  left: 68px;
+  bottom: 14px;
+  z-index: 2;
+  border-radius: 999px;
+  background: #ffffff;
+  padding-right: 8px;
+}
+
+#reports .doc-meta {
+  right: 16px;
+  bottom: 14px;
+  z-index: 2;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--ink-500);
+  padding-left: 10px;
+}
+
+#reports .doc-icon {
+  align-self: start;
+}
+
+@media (max-width: 720px) {
+  #reports .doc-button,
+  #reports .deliverable-panel .doc-button,
+  #reports .doc-category-grid .doc-button {
+    min-height: 142px;
+    padding: 13px 14px 40px 16px;
+  }
+
+  #reports .doc-button::after {
+    left: 64px;
+  }
+}
