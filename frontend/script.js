@@ -567,19 +567,19 @@ function toast(message) {
 
 function conversationGreeting() {
   if (needsCompanySetup()) {
-    return "老板，当前账号还没有企业。先点“新建公司”，填公司名称和主营业务，我会为这家公司单独建立经营看板、AI员工和今日任务。";
+    return "当前账号还没有企业。请先新建公司，填写公司名称和主营业务。系统会为这家公司建立独立经营看板、AI员工和今日任务。";
   }
   const company = displayCompany();
   const tasks = dashboardState.tasks || [];
-  const firstTask = tasks[0]?.title ? `今天建议先看：${tasks[0].title}。` : "今天我会先整理最要紧的经营事项。";
+  const firstTask = tasks[0]?.title ? `今天建议先处理：${tasks[0].title}。` : "今天会先整理最重要的经营事项。";
   const kind = companyKind(company);
   const examples =
     kind === "investment"
-      ? "找项目源、写项目跟进、做投资方案或整理尽调安排"
+      ? "整理项目源、项目跟进、投资方案或尽调安排"
       : kind === "trade"
-        ? "找采购客户、写询价回复、做报价单或整理发货回款"
-        : "找客户、写跟进话术、做方案报价或整理员工安排";
-  return `我在这里帮${company.name || "公司"}推进经营任务。${firstTask}你可以直接吩咐我${examples}。`;
+        ? "整理采购客户、询价回复、报价单或发货回款"
+        : "整理客户、跟进话术、方案报价或员工安排";
+  return `已进入${company.name || "公司"}经营工作区。${firstTask}可以直接下达任务：${examples}。`;
 }
 
 function isNearMessageBottom() {
@@ -917,7 +917,7 @@ function companyKind(company) {
 function quickActionsForCompany(company) {
   if (needsCompanySetup()) {
     return [
-      ["帮我想办法", "", "cycle"],
+      ["经营检查", "", "cycle"],
       ["填公司资料", "我需要填写公司名称和主营业务"],
       ["看创建流程", "告诉我创建企业后会生成什么"],
       ["准备资料", "我应该先准备哪些企业资料"],
@@ -926,7 +926,7 @@ function quickActionsForCompany(company) {
   const kind = companyKind(company);
   if (kind === "investment") {
     return [
-      ["帮我想办法", "", "cycle"],
+      ["经营检查", "", "cycle"],
       ["找项目源", "帮我整理20个可能适合投资或合作的项目来源渠道。每个渠道要写清楚来源类型、为什么可能有项目、该找什么人、第一句话怎么说、下一步怎么跟进，并给我本周优先级。"],
       ["看竞争", "帮我监控同类投资机构和替代方案的动向，给我一份本周应对报告。报告要说明它们会抢走什么项目或资源、对我们项目源和估值判断有什么影响、我本周该安排谁做什么。"],
       ["看机会", "帮我观察投资行业的发展机会，告诉我这家公司本周应该抓什么。请按机会、为什么现在值得看、适合我们的原因、本周验证动作、风险和需要我拍板的事项来写。"],
@@ -934,14 +934,14 @@ function quickActionsForCompany(company) {
   }
   if (kind === "trade") {
     return [
-      ["帮我想办法", "", "cycle"],
+      ["经营检查", "", "cycle"],
       ["找采购客户", "帮我整理16个可能采购公司产品的客户类型或渠道。每个都要写清楚采购理由、决策人方向、首句开场白、报价或交期要注意什么、本周下一步。"],
       ["看竞争", "帮我监控同行批发商、代理商和线上供应链平台的动向，给我本周应对报告。报告要连接到价格、交期、付款条件、客户预期和我们的反制动作。"],
       ["看机会", "帮我观察贸易和供应链行业的发展机会，告诉我本周该抓什么。请给出客户切口、报价打法、交付风险、回款安排和一周验证方法。"],
     ];
   }
   return [
-    ["帮我想办法", "", "cycle"],
+    ["经营检查", "", "cycle"],
     ["找10个客户", "帮我整理10个适合公司业务的潜在客户类型或来源。每个都要写清楚为什么可能需要我们、谁能拍板、第一句话怎么说、下一步怎么跟进、本周优先级。"],
     ["看竞争", "帮我监控竞争对手和替代方案的动向，给我本周应对报告。报告要说明对获客、报价、交付、客户信任和回款的影响，并给出我本周该安排的动作。"],
     ["看机会", "帮我观察整个行业的发展机会，告诉我这家公司本周应该抓什么。请按客户痛点、为什么现在值得做、最小验证动作、负责人、风险和需要我确认的事项来写。"],
@@ -1574,7 +1574,7 @@ async function runAICli(message) {
   setAIBusy(true);
   setAIStatus("处理中", "busy");
   addConversationMessage("user", message);
-  const pendingMessageId = addConversationMessage("agent", "收到，我正在打开公司AI工作区。", "pending");
+  const pendingMessageId = addConversationMessage("agent", "已收到。正在读取公司资料和任务记录。", "pending");
 
   let ok = false;
   try {
