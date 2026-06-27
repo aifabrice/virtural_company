@@ -1185,6 +1185,26 @@ textarea::placeholder { color: oklch(0.58 0.02 72); }
   border-radius: 50%;
   animation: status-spin 900ms linear infinite;
 }
+.creation-inline-panel {
+  grid-column: 1 / -1;
+  padding: 13px;
+  border-color: rgba(222, 92, 38, 0.28);
+  background:
+    linear-gradient(180deg, rgba(255, 251, 241, 0.96), rgba(246, 240, 227, 0.82)),
+    var(--surface);
+}
+.creation-inline-panel[hidden] {
+  display: none !important;
+}
+.creation-inline-panel .creation-process {
+  margin-top: 0;
+}
+.creation-inline-panel .creation-live {
+  background:
+    radial-gradient(circle at 43px 42px, rgba(222, 92, 38, 0.2), transparent 35px),
+    linear-gradient(135deg, rgba(222, 92, 38, 0.1), transparent 60%),
+    rgba(255, 253, 247, 0.86);
+}
 .modal-backdrop[data-current="creation"] .modal {
   width: min(760px, 100%);
 }
