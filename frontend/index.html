@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>企小帮 - 中文AI公司经营系统</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3" />
-    <link rel="stylesheet" href="styles.css?v=15" />
+    <link rel="stylesheet" href="styles.css?v=16" />
   </head>
   <body>
     <section class="login-view" id="loginView" aria-label="老板入口">
@@ -67,7 +67,7 @@
       <header class="topbar">
         <a class="brand" href="/dashboard/fitscope" aria-label="顺达机械经营看板">
           <span>顺达机械</span>
-          <small id="companySlug">/dashboard/fitscope</small>
+          <small id="companySlug" aria-hidden="true"></small>
         </a>
         <div class="top-actions">
           <button class="bevel" id="healthButton" type="button">AI状态</button>
@@ -93,9 +93,8 @@
 
       <div class="app-shell chat-open" id="appShell">
         <nav class="side-nav" aria-label="公司功能">
-          <button class="active" type="button" data-view="today">今天</button>
-          <button type="button" data-view="agents">AI员工</button>
-          <button type="button" data-view="tasks">待确认</button>
+          <button class="active" type="button" data-view="today">决策中心</button>
+          <button type="button" data-view="agents">团队</button>
           <button type="button" data-view="channels">获客</button>
           <button type="button" data-view="records">记录</button>
         </nav>
@@ -103,7 +102,7 @@
         <main class="dashboard" id="dashboard" aria-label="公司经营看板">
           <section class="hero-panel" id="today" data-view-panel="today">
             <div>
-              <p class="eyebrow">公司经营台</p>
+              <p class="eyebrow">决策中心</p>
               <h1 id="companyName">顺达机械</h1>
               <p id="companyMood">AI员工正在替公司推进今天的经营任务</p>
             </div>
@@ -114,16 +113,16 @@
 
           <section class="panel" id="agents" data-view-panel="agents">
             <div class="section-head">
-              <h2>AI员工正在做什么</h2>
+              <h2>团队正在做什么</h2>
               <button class="text-button" id="refreshDashboard" type="button">刷新</button>
             </div>
             <div class="agent-list" id="agentList"></div>
           </section>
 
-          <section class="panel" id="tasks" data-view-panel="tasks">
+          <section class="panel" id="tasks" data-view-panel="today">
             <div class="section-head">
-              <h2>等老板确认</h2>
-              <span class="meta">只放需要老板拍板的事</span>
+              <h2>待老板决策</h2>
+              <span class="meta">任务、拍板事项和下一步动作</span>
             </div>
             <div class="task-list" id="taskList"></div>
           </section>
@@ -207,6 +206,6 @@
 
     <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
-    <script src="script.js?v=15"></script>
+    <script src="script.js?v=16"></script>
   </body>
 </html>

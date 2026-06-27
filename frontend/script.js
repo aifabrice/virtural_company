@@ -264,6 +264,32 @@ function plainSnippet(value, max = 92) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
+const documentCategoryOrder = [
+  { id: "efficiency", label: "内部效能", hint: "团队安排、流程优化和执行节奏" },
+  { id: "competition", label: "外部竞争分析", hint: "竞品、行业机会、市场变化和风险" },
+  { id: "revenue", label: "企业营收", hint: "客户、报价、回款、利润和增长动作" },
+  { id: "assets", label: "经营资料库", hint: "公司介绍、方案、话术和销售资料" },
+  { id: "strategy", label: "经营判断", hint: "老板决策、阶段计划和关键判断" },
+];
+
+function findDocumentCategory(doc) {
+  const text = `${doc?.type || ""} ${doc?.title || ""} ${doc?.summary || ""} ${doc?.content || ""}`.toLowerCase();
+  const has = (terms) => terms.some((term) => text.includes(term.toLowerCase()));
+  if (has(["内部", "效能", "效率", "员工", "团队", "安排", "流程", "任务", "执行", "排班", "协作", "运营", "复盘", "sop"])) {
+    return documentCategoryOrder[0];
+  }
+  if (has(["竞品", "竞争", "对手", "行业", "市场", "机会", "替代", "价格", "外部", "动向", "趋势", "政策", "同类", "标杆", "赛道"])) {
+    return documentCategoryOrder[1];
+  }
+  if (has(["营收", "收入", "销售", "客户", "获客", "成交", "报价", "回款", "收款", "利润", "毛利", "预算", "成本", "现金", "渠道", "订单", "线索", "名单", "合同", "转化", "tco"])) {
+    return documentCategoryOrder[2];
+  }
+  if (has(["资料", "档案", "介绍", "官网", "文案", "话术", "对外", "方案", "清单", "手册", "模板"])) {
+    return documentCategoryOrder[3];
+  }
+  return documentCategoryOrder[4];
+}
+
 function documentCardMeta(doc) {
   const type = String(doc?.type || "经营资料").trim();
   const title = String(doc?.title || "");
@@ -292,6 +318,46 @@ function documentCardMeta(doc) {
   const tone =
     label === "报告" ? "report" : label === "客户" ? "leads" : label === "方案" ? "proposal" : label === "计划" ? "plan" : "asset";
   return { type, label, summary, tone };
+}
+
+function renderDocumentButton(doc) {
+  const meta = documentCardMeta(doc);
+  const title = doc.title || "未命名资料";
+  const id = doc.id || title;
+  return `<button class="doc-button" type="button" data-doc="${escapeHtml(id)}" data-tone="${escapeHtml(meta.tone)}" aria-label="打开${escapeHtml(title)}">
+    <span class="doc-icon">${escapeHtml(meta.label)}</span>
+    <span class="doc-content">
+      <span class="doc-type">${escapeHtml(meta.type)}</span>
+      <strong>${escapeHtml(title)}</strong>
+      <small>${escapeHtml(meta.summary)}</small>
+    </span>
+    <span class="doc-meta">${escapeHtml(doc.age || "刚刚")}</span>
+  </button>`;
+}
+
+function renderDocumentGroups(documents) {
+  const groups = new Map(documentCategoryOrder.map((category) => [category.id, { ...category, items: [] }]));
+  documents.forEach((doc) => {
+    const category = findDocumentCategory(doc);
+    groups.get(category.id).items.push(doc);
+  });
+  return [...groups.values()]
+    .filter((category) => category.items.length)
+    .map(
+      (category) => `<section class="doc-category" data-category="${escapeHtml(category.id)}">
+        <div class="doc-category-head">
+          <div>
+            <strong>${escapeHtml(category.label)}</strong>
+            <span>${escapeHtml(category.hint)}</span>
+          </div>
+          <em>${category.items.length}份</em>
+        </div>
+        <div class="doc-category-grid">
+          ${category.items.map(renderDocumentButton).join("")}
+        </div>
+      </section>`,
+    )
+    .join("");
 }
 
 function renderInlineMarkdown(value) {
@@ -714,7 +780,7 @@ function redirectToLogin(message) {
 }
 
 function setDashboardView(view) {
-  currentView = view === "settings" ? "tasks" : view || "today";
+  currentView = view === "settings" || view === "tasks" ? "today" : view || "today";
   els.dashboard.dataset.view = currentView;
   document.querySelectorAll("[data-view-panel]").forEach((panel) => {
     const views = String(panel.dataset.viewPanel || "").split(/\s+/);
@@ -743,7 +809,7 @@ function renderDashboard(data) {
     conversationMessages = [];
   }
 
-  els.companySlug.textContent = `/dashboard/${company.slug || "fitscope"}`;
+  if (els.companySlug) els.companySlug.textContent = "";
   const topbarBrand = document.querySelector(".topbar .brand");
   if (topbarBrand) {
     topbarBrand.href = `/dashboard/${company.slug || "fitscope"}`;
@@ -830,21 +896,7 @@ function renderDashboard(data) {
       .join("");
 
   els.docList.innerHTML = documents.length
-    ? documents
-      .map((doc) => {
-        const meta = documentCardMeta(doc);
-        const title = doc.title || "未命名资料";
-        return `<button class="doc-button" type="button" data-doc="${escapeHtml(doc.id)}" data-tone="${escapeHtml(meta.tone)}" aria-label="打开${escapeHtml(title)}">
-        <span class="doc-icon">${escapeHtml(meta.label)}</span>
-        <span class="doc-content">
-          <span class="doc-type">${escapeHtml(meta.type)}</span>
-          <strong>${escapeHtml(title)}</strong>
-          <small>${escapeHtml(meta.summary)}</small>
-        </span>
-        <span class="doc-meta">${escapeHtml(doc.age || "刚刚")}</span>
-      </button>`;
-      })
-      .join("")
+    ? renderDocumentGroups(documents)
     : `<article class="soft-card compact"><strong>资料待生成</strong><p>创建企业后，AI会生成公司档案、销售打法、90天计划和今日简报。</p></article>`;
 
   els.channelList.innerHTML = channels.length
@@ -1797,7 +1849,7 @@ async function saveCompany(form) {
     }
     toast(isNewCompany ? "新公司工程已建好" : "公司资料已保存");
     pushLog(isNewCompany ? "> AI已完成新公司经营工程" : "> 已更新公司资料");
-    if (isNewCompany) addConversationMessage("agent", `${finalData.dashboard?.company?.name || "新公司"}已经建好。我已经整理了公司档案、AI部门、今日任务和资料草稿，老板可以先看“今天”里的三件事。`);
+    if (isNewCompany) addConversationMessage("agent", `${finalData.dashboard?.company?.name || "新公司"}已经建好。我已经整理了公司档案、团队分工、今日任务和资料草稿，老板可以先看“决策中心”里的事项和产出。`);
   } catch (error) {
     companyCreationBusy = false;
     if (isNewCompany) {
