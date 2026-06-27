@@ -255,6 +255,45 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function plainSnippet(value, max = 92) {
+  const text = String(value || "")
+    .replace(/[#*_`>|-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function documentCardMeta(doc) {
+  const type = String(doc?.type || "经营资料").trim();
+  const title = String(doc?.title || "");
+  const source = `${type} ${title}`;
+  const summary =
+    plainSnippet(doc?.summary, 96) ||
+    (source.includes("竞品") || source.includes("竞争")
+      ? "跟踪竞品动作、价格变化和市场机会，便于老板判断下一步打法。"
+      : source.includes("客户") || source.includes("销售")
+        ? "沉淀客户线索、跟进优先级和可直接执行的销售动作。"
+        : source.includes("计划") || source.includes("90")
+          ? "把公司近期重点拆成阶段目标、关键任务和负责人安排。"
+          : source.includes("简报") || source.includes("报告")
+            ? "汇总当前经营判断、风险提醒和需要老板拍板的事项。"
+            : "已整理成可打开查看的经营资料，可继续扩写、复制或交给AI更新。");
+  const label =
+    source.includes("报告") || source.includes("简报")
+      ? "报告"
+      : source.includes("客户") || source.includes("名单")
+        ? "客户"
+        : source.includes("方案") || source.includes("报价")
+          ? "方案"
+          : source.includes("计划")
+            ? "计划"
+            : type.slice(0, 4) || "资料";
+  const tone =
+    label === "报告" ? "report" : label === "客户" ? "leads" : label === "方案" ? "proposal" : label === "计划" ? "plan" : "asset";
+  return { type, label, summary, tone };
+}
+
 function renderInlineMarkdown(value) {
   return escapeHtml(value)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
@@ -792,13 +831,19 @@ function renderDashboard(data) {
 
   els.docList.innerHTML = documents.length
     ? documents
-      .map(
-        (doc) => `<button class="doc-button" type="button" data-doc="${escapeHtml(doc.id)}">
-        <span class="doc-icon">${escapeHtml(doc.type.slice(0, 2))}</span>
-        <span>${escapeHtml(doc.title)}</span>
-        <span class="meta">${escapeHtml(doc.age)}</span>
-      </button>`,
-      )
+      .map((doc) => {
+        const meta = documentCardMeta(doc);
+        const title = doc.title || "未命名资料";
+        return `<button class="doc-button" type="button" data-doc="${escapeHtml(doc.id)}" data-tone="${escapeHtml(meta.tone)}" aria-label="打开${escapeHtml(title)}">
+        <span class="doc-icon">${escapeHtml(meta.label)}</span>
+        <span class="doc-content">
+          <span class="doc-type">${escapeHtml(meta.type)}</span>
+          <strong>${escapeHtml(title)}</strong>
+          <small>${escapeHtml(meta.summary)}</small>
+        </span>
+        <span class="doc-meta">${escapeHtml(doc.age || "刚刚")}</span>
+      </button>`;
+      })
       .join("")
     : `<article class="soft-card compact"><strong>资料待生成</strong><p>创建企业后，AI会生成公司档案、销售打法、90天计划和今日简报。</p></article>`;
 
