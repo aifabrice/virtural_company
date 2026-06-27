@@ -714,24 +714,28 @@ function renderDashboard(data) {
   document.querySelector(".brand > span").textContent = company.name || "创建企业";
   els.companyName.textContent = company.name || "创建企业";
   els.companyMood.textContent = company.mood || "先创建自己的企业，AI会为这家公司建立独立经营看板。";
-  els.updatedAt.textContent = `更新：${updatedAt || "刚刚"}`;
+  if (els.updatedAt) els.updatedAt.textContent = `更新：${updatedAt || "刚刚"}`;
   els.runCycleButton.textContent = setupMode ? "创建企业" : "让AI继续干活";
   updateQuickActions(company);
 
-  els.metricGrid.innerHTML = metrics
-    .map(
-      (item) => `<article class="metric-card" data-tone="${escapeHtml(String(item.tone || "work").replace(/[^a-z0-9_-]/gi, ""))}">
+  if (els.metricGrid) {
+    els.metricGrid.innerHTML = metrics
+      .map(
+        (item) => `<article class="metric-card" data-tone="${escapeHtml(String(item.tone || "work").replace(/[^a-z0-9_-]/gi, ""))}">
         <span class="metric-label">${escapeHtml(item.label)}</span>
         <strong>${escapeHtml(item.value)}</strong>
         <small>${escapeHtml(item.hint)}</small>
       </article>`,
-    )
-    .join("");
+      )
+      .join("");
+  }
 
-  els.focusList.innerHTML = tasks
-    .slice(0, 3)
-    .map((task) => `<li><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(task.nextStep || task.body)}</span></li>`)
-    .join("");
+  if (els.focusList) {
+    els.focusList.innerHTML = tasks
+      .slice(0, 3)
+      .map((task) => `<li><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(task.nextStep || task.body)}</span></li>`)
+      .join("");
+  }
 
   els.agentList.innerHTML = agents.length
     ? agents

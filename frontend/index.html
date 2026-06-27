@@ -112,16 +112,6 @@
 
           <section class="panel creation-inline-panel" id="creationPanel" aria-live="polite" hidden></section>
 
-          <section class="metric-grid" id="metricGrid" aria-label="关键数字" data-view-panel="today"></section>
-
-          <section class="panel focus-panel" data-view-panel="today">
-            <div class="section-head">
-              <h2>老板今天只看这三件事</h2>
-              <span class="meta" id="updatedAt">正在更新</span>
-            </div>
-            <ol class="focus-list" id="focusList"></ol>
-          </section>
-
           <section class="panel" id="agents" data-view-panel="agents">
             <div class="section-head">
               <h2>AI员工正在做什么</h2>
@@ -138,10 +128,10 @@
             <div class="task-list" id="taskList"></div>
           </section>
 
-          <section class="panel" data-view-panel="tasks">
+          <section class="panel deliverable-panel" data-view-panel="today tasks">
             <div class="section-head">
-              <h2>资料和报告</h2>
-              <span class="meta">可直接给员工看</span>
+              <h2>AI产出物</h2>
+              <span class="meta" id="updatedAt">正在更新</span>
             </div>
             <div class="doc-list" id="docList"></div>
           </section>
