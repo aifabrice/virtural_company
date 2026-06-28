@@ -4256,3 +4256,51 @@ textarea {
     left: 64px;
   }
 }
+
+/* Precise vertical alignment for brand lockup and chat composer */
+.topbar .brand {
+  position: relative;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  line-height: 1;
+}
+
+.topbar .brand span {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.topbar .brand::before {
+  flex: 0 0 auto;
+  grid-row: auto;
+}
+
+.composer {
+  align-items: center;
+}
+
+.composer textarea,
+#chatInput {
+  display: block;
+  height: 36px;
+  min-height: 36px;
+  line-height: 20px;
+  overflow-y: hidden;
+  padding: 8px 0;
+}
+
+#chatInput::placeholder {
+  line-height: 20px;
+}
+
+@media (max-width: 560px) {
+  .composer textarea,
+  #chatInput {
+    height: 34px;
+    min-height: 34px;
+    padding: 7px 0;
+  }
+}
