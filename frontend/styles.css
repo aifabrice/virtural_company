@@ -4479,3 +4479,60 @@ textarea {
     grid-row: auto;
   }
 }
+
+/* Report list cleanup: remove counts, redundant actions, avatars, and double rules */
+#reports .doc-category-head {
+  min-height: 26px;
+  padding: 0 0 6px;
+}
+
+#reports .doc-category-head em {
+  display: none;
+}
+
+#reports .doc-category-grid {
+  border-top: 0;
+}
+
+#reports .doc-category + .doc-category {
+  border-top: 1px solid #e8eef5;
+  margin-top: 8px;
+  padding-top: 10px;
+}
+
+#reports .doc-button,
+#reports .deliverable-panel .doc-button,
+#reports .doc-category-grid .doc-button {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 66px;
+  border-bottom: 0;
+  padding: 8px 0 10px;
+}
+
+#reports .doc-button + .doc-button {
+  border-top: 1px solid #eef3f7;
+}
+
+#reports .doc-icon,
+#reports .doc-meta,
+#reports .doc-button::after {
+  display: none;
+}
+
+#reports .doc-content {
+  grid-column: 1;
+}
+
+#reports .doc-type {
+  margin-bottom: 1px;
+}
+
+@media (max-width: 720px) {
+  #reports .doc-button,
+  #reports .deliverable-panel .doc-button,
+  #reports .doc-category-grid .doc-button {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 66px;
+    padding: 8px 0 10px;
+  }
+}
