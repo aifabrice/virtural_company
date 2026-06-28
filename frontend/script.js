@@ -370,8 +370,31 @@ function renderSectionMore(kind, hiddenCount, expanded) {
   </div>`;
 }
 
+const TASK_ACTIONS = [
+  { choice: "confirm", label: "同意" },
+  { choice: "agent", label: "交给AI" },
+  { choice: "pause", label: "先不做" },
+];
+
+function getTaskState(task) {
+  const rawStatus = String(task?.status || "").trim();
+  if (/暂缓|先不做/.test(rawStatus)) return { key: "paused", label: "已暂缓", selected: "pause" };
+  if (/交给AI|AI处理|执行中/.test(rawStatus)) return { key: "delegated", label: "已交给AI", selected: "agent" };
+  if (/同意|确认/.test(rawStatus)) return { key: "confirmed", label: "已同意", selected: "confirm" };
+  return { key: "pending", label: "待处理", selected: "" };
+}
+
+function renderTaskActions(taskId, state) {
+  return TASK_ACTIONS.map((action) => {
+    const selected = state.selected === action.choice;
+    const label = selected ? state.label : action.label;
+    return `<button type="button" data-task-choice="${escapeHtml(action.choice)}" data-task-id="${escapeHtml(taskId)}" class="${selected ? "selected" : ""}" aria-pressed="${selected ? "true" : "false"}"${selected ? " disabled" : ""}>${escapeHtml(label)}</button>`;
+  }).join("");
+}
+
 function renderTaskCard(task) {
-  return `<article class="task-card" data-task="${escapeHtml(task.id)}" tabindex="0">
+  const state = getTaskState(task);
+  return `<article class="task-card" data-task="${escapeHtml(task.id)}" data-state="${escapeHtml(state.key)}" tabindex="0">
     <div class="task-top">
       <strong>${escapeHtml(task.title)}</strong>
       <span class="tag ${task.priority === "今天" ? "urgent" : ""}">${escapeHtml(task.priority)}</span>
@@ -379,12 +402,10 @@ function renderTaskCard(task) {
     <p>${escapeHtml(task.body)}</p>
     <div class="task-meta">
       <span>${escapeHtml(task.owner)}</span>
-      <span>${escapeHtml(task.status)}</span>
+      <span class="task-state" data-state="${escapeHtml(state.key)}">${escapeHtml(state.label)}</span>
     </div>
     <div class="task-actions" aria-label="处理这个事项">
-      <button type="button" data-task-choice="confirm" data-task-id="${escapeHtml(task.id)}">同意</button>
-      <button type="button" data-task-choice="agent" data-task-id="${escapeHtml(task.id)}">交给AI</button>
-      <button type="button" data-task-choice="pause" data-task-id="${escapeHtml(task.id)}">先不做</button>
+      ${renderTaskActions(task.id, state)}
     </div>
   </article>`;
 }
@@ -1313,16 +1334,17 @@ function openModal(key, detail) {
       <div class="modal-list">
         ${tasks
           .map(
-            (task) => `<article class="modal-item">
+            (task) => {
+              const state = getTaskState(task);
+              return `<article class="modal-item" data-state="${escapeHtml(state.key)}">
               <strong>${escapeHtml(task.title)}</strong>
               <p>${escapeHtml(task.body)}</p>
-              <span class="meta">${escapeHtml(task.owner)} · ${escapeHtml(task.status)}</span>
+              <span class="meta">${escapeHtml(task.owner)} · ${escapeHtml(state.label)}</span>
               <div class="task-actions">
-                <button type="button" data-task-choice="confirm" data-task-id="${escapeHtml(task.id)}">同意</button>
-                <button type="button" data-task-choice="agent" data-task-id="${escapeHtml(task.id)}">交给AI</button>
-                <button type="button" data-task-choice="pause" data-task-id="${escapeHtml(task.id)}">先不做</button>
+                ${renderTaskActions(task.id, state)}
               </div>
-            </article>`,
+            </article>`;
+            },
           )
           .join("")}
       </div>`,
@@ -1754,7 +1776,7 @@ async function updateTask(taskId, action) {
     toast(action === "pause" ? "已暂缓" : "已记录，AI会继续推进");
     pushLog(action === "pause" ? `> 老板暂缓：${task.title}` : action === "agent" ? `> 已交给AI：${task.title}` : `> 老板确认：${task.title}`);
   } catch (error) {
-    task.status = action === "pause" ? "已暂缓" : "老板已同意";
+    task.status = action === "pause" ? "已暂缓" : action === "agent" ? "已交给AI处理" : "老板已同意";
     renderDashboard(dashboardState);
     toast("后端未保存，但页面已先记录");
   }
