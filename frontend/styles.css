@@ -4696,3 +4696,37 @@ textarea {
     min-height: 230px;
   }
 }
+
+/* Compact dashboard hero: remove redundant label space */
+.hero-panel {
+  min-height: 0;
+  padding: 18px 28px;
+}
+
+.hero-panel .eyebrow {
+  display: none;
+}
+
+.hero-panel h1 {
+  margin: 0 0 6px;
+}
+
+.hero-panel p:not(.eyebrow) {
+  line-height: 1.45;
+}
+
+.hero-panel .god-mode {
+  min-height: 44px;
+  padding: 10px 20px;
+}
+
+@media (max-width: 720px) {
+  .hero-panel {
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .hero-panel .god-mode {
+    min-height: 40px;
+  }
+}
