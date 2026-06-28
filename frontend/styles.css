@@ -4304,3 +4304,20 @@ textarea {
     padding: 7px 0;
   }
 }
+
+/* Remove decorative side strips inside cards */
+#reports .doc-button::before,
+#tasks .task-card::before {
+  content: none;
+  display: none;
+}
+
+#reports .doc-button,
+#reports .deliverable-panel .doc-button,
+#reports .doc-category-grid .doc-button {
+  padding-left: 14px;
+}
+
+#tasks .task-card {
+  padding-left: 14px;
+}
